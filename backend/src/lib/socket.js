@@ -7,7 +7,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: ["https://lovinks.vercel.app/login"],
+    origin: ["https://lovinks.vercel.app"],
   },
 });
 

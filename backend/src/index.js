@@ -21,7 +21,7 @@ app.use(express.urlencoded({ limit: "25mb", extended: true }));
 app.use(cookieParser());
 app.use(
   cors({
-    origin: "https://lovinks.vercel.app/login",
+    origin: "https://lovinks.vercel.app",
     credentials: true,
   })
 );
