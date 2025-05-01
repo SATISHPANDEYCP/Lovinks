@@ -85,20 +85,30 @@ export const useAuthStore = create((set, get) => ({
   connectSocket: () => {
     const { authUser } = get();
     if (!authUser || get().socket?.connected) return;
-
-    const socket = io(BASE_URL, {
+  
+    const socket = io("https://lovink.onrender.com", {
+      transports: ["websocket"], // ✅ add this line
       query: {
         userId: authUser._id,
       },
     });
-    socket.connect();
-
-    set({ socket: socket });
-
+  
+    set({ socket });
+  
+    socket.on("connect", () => {
+      console.log("✅ Socket connected:", socket.id);
+    });
+  
     socket.on("getOnlineUsers", (userIds) => {
+      console.log("📶 Online Users:", userIds);
       set({ onlineUsers: userIds });
     });
+  
+    socket.on("disconnect", () => {
+      console.log("❌ Socket disconnected");
+    });
   },
+  
   disconnectSocket: () => {
     if (get().socket?.connected) get().socket.disconnect();
   },
