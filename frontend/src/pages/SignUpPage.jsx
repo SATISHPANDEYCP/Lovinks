@@ -23,7 +23,8 @@ const SignUpPage = () => {
     if (!formData.password) return toast.error("Password is required");
     if (formData.password.length < 6) return toast.error("Password must be at least 6 characters");
 
-    return true;
+    return toast.error("Route not Found.");
+
   };
 
   const handleSubmit = (e) => {

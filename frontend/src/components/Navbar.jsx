@@ -4,7 +4,9 @@ import { LogOut, MessageSquare, Settings, User } from "lucide-react";
 
 const Navbar = () => {
   const { logout, authUser } = useAuthStore();
-
+  const names = ["Gargi❤️Satish", "Satish❤️Gargi"];
+  const randomIndex = Math.floor(Math.random() * names.length);
+  const displayName = names[randomIndex];
   return (
     <header
       className="bg-base-100 border-b border-base-300 fixed w-full top-0 z-40 
@@ -17,7 +19,7 @@ const Navbar = () => {
               <div className="size-9 rounded-lg bg-primary/10 flex items-center justify-center">
                 <MessageSquare className="w-5 h-5 text-primary" />
               </div>
-              <h1 className="text-lg font-bold">Chatty</h1>
+              <h1 className="text-lg font-bold">{displayName}</h1>
             </Link>
           </div>
 
