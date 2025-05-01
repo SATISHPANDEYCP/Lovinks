@@ -7,12 +7,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: [
-      "https://lovinks.vercel.app", // your Vercel frontend
-      "http://localhost:3000",      // for local development
-    ],
-    methods: ["GET", "POST"],
-    credentials: true,
+    origin: ["https://lovinks.vercel.app"],
   },
 });
 
