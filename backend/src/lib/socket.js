@@ -7,7 +7,12 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: ["https://lovinks.vercel.app"],
+    origin: [
+      "https://lovinks.vercel.app", // your Vercel frontend
+      "http://localhost:3000",      // for local development
+    ],
+    methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
@@ -22,7 +27,15 @@ io.on("connection", (socket) => {
   console.log("A user connected", socket.id);
 
   const userId = socket.handshake.query.userId;
-  if (userId) userSocketMap[userId] = socket.id;
+
+  if (!userId) {
+    console.warn(`⚠️ Socket ${socket.id} connected without userId`);
+    return;
+  }
+
+  userSocketMap[userId] = socket.id;
+  console.log(`✅ User connected: ${userId} -> ${socket.id}`);
+
 
   // io.emit() is used to send events to all the connected clients
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
