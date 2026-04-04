@@ -3,7 +3,7 @@ import { axiosInstance } from "../lib/axios.js";
 import toast from "react-hot-toast";
 import { io } from "socket.io-client";
 
-const BASE_URL =  "https://lovink.onrender.com/api";
+const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "/";
 
 export const useAuthStore = create((set, get) => ({
   authUser: null,
@@ -12,6 +12,7 @@ export const useAuthStore = create((set, get) => ({
   isUpdatingProfile: false,
   isCheckingAuth: true,
   onlineUsers: [],
+  userPresence: {},
   socket: null,
 
   checkAuth: async () => {
@@ -85,31 +86,45 @@ export const useAuthStore = create((set, get) => ({
   connectSocket: () => {
     const { authUser } = get();
     if (!authUser || get().socket?.connected) return;
-  
-    const socket = io("https://lovink.onrender.com", {
-      transports: ["websocket"], // ✅ add this line
+
+    const socket = io(BASE_URL, {
       query: {
         userId: authUser._id,
       },
     });
-  
-    set({ socket });
-  
-    socket.on("connect", () => {
-      console.log("✅ Socket connected:", socket.id);
-    });
-  
+    socket.connect();
+
+    set({ socket: socket });
+
     socket.on("getOnlineUsers", (userIds) => {
-      console.log("📶 Online Users:", userIds);
       set({ onlineUsers: userIds });
     });
-  
-    socket.on("disconnect", () => {
-      console.log("❌ Socket disconnected");
+
+    socket.on("userPresenceUpdated", ({ userId, status, lastSeen }) => {
+      set((state) => {
+        const nextOnlineUsers = new Set(state.onlineUsers);
+
+        if (status === "online") {
+          nextOnlineUsers.add(userId);
+        } else if (status === "offline") {
+          nextOnlineUsers.delete(userId);
+        }
+
+        return {
+          onlineUsers: Array.from(nextOnlineUsers),
+          userPresence: {
+            ...state.userPresence,
+            [userId]: {
+              status,
+              lastSeen: status === "offline" ? lastSeen : null,
+            },
+          },
+        };
+      });
     });
   },
-  
   disconnectSocket: () => {
     if (get().socket?.connected) get().socket.disconnect();
+    set({ socket: null, onlineUsers: [], userPresence: {} });
   },
 }));

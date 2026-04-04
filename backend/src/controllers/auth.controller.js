@@ -3,6 +3,40 @@ import User from "../models/user.model.js";
 import bcrypt from "bcryptjs";
 import cloudinary from "../lib/cloudinary.js";
 
+const MAX_PROFILE_PIC_SIZE_BYTES = 5 * 1024 * 1024;
+const APP_ASSET_FOLDER = "lovinks";
+
+const getBase64SizeInBytes = (base64String) => {
+  const base64Data = base64String.includes(",") ? base64String.split(",")[1] : base64String;
+  const padding = (base64Data.match(/=+$/) || [""])[0].length;
+  return Math.floor((base64Data.length * 3) / 4) - padding;
+};
+
+const getCloudinaryPublicIdFromUrl = (url) => {
+  if (!url || typeof url !== "string") return null;
+
+  // Handles Cloudinary URLs like: .../upload/v123/folder/name.jpg
+  const uploadMarker = "/upload/";
+  const uploadIndex = url.indexOf(uploadMarker);
+  if (uploadIndex === -1) return null;
+
+  let publicIdWithVersion = url.slice(uploadIndex + uploadMarker.length);
+  publicIdWithVersion = publicIdWithVersion.split("?")[0];
+
+  // Remove optional transformation segments by taking the last occurrence of /v<number>/
+  const versionMatch = publicIdWithVersion.match(/\/v\d+\//);
+  if (versionMatch) {
+    const versionSegment = versionMatch[0];
+    const versionIndex = publicIdWithVersion.indexOf(versionSegment);
+    publicIdWithVersion = publicIdWithVersion.slice(versionIndex + versionSegment.length);
+  }
+
+  const lastDotIndex = publicIdWithVersion.lastIndexOf(".");
+  if (lastDotIndex === -1) return publicIdWithVersion;
+
+  return publicIdWithVersion.slice(0, lastDotIndex);
+};
+
 export const signup = async (req, res) => {
   const { fullName, email, password } = req.body;
   try {
@@ -94,9 +128,32 @@ export const updateProfile = async (req, res) => {
       return res.status(400).json({ message: "Profile pic is required" });
     }
 
+    const imageSizeBytes = getBase64SizeInBytes(profilePic);
+    if (imageSizeBytes > MAX_PROFILE_PIC_SIZE_BYTES) {
+      return res.status(400).json({ message: "Profile pic must be 5MB or smaller" });
+    }
+
+    const currentUser = await User.findById(userId);
+    if (!currentUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     const uploadResponse = await cloudinary.uploader.upload(profilePic, {
-      folder: 'lovinks_ProfilePics',
+      folder: APP_ASSET_FOLDER,
+      public_id: `profile-${userId}-${Date.now()}`,
+      resource_type: "image",
     });
+
+    if (currentUser.profilePic) {
+      const oldPublicId = getCloudinaryPublicIdFromUrl(currentUser.profilePic);
+      if (oldPublicId) {
+        try {
+          await cloudinary.uploader.destroy(oldPublicId);
+        } catch (destroyError) {
+          console.log("Failed to delete old profile pic:", destroyError.message);
+        }
+      }
+    }
 
     const updatedUser = await User.findByIdAndUpdate(
       userId,

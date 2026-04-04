@@ -1,12 +1,19 @@
 import { Link } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
-import { LogOut, MessageSquare, Settings, User } from "lucide-react";
+import { LogOut, MessageSquare, User, Palette } from "lucide-react";
+import { useThemeStore } from "../store/useThemeStore";
+import { THEMES } from "../constants";
 
 const Navbar = () => {
   const { logout, authUser } = useAuthStore();
-  const names = ["Gargi❤️Satish", "Satish❤️Gargi"];
-  const randomIndex = Math.floor(Math.random() * names.length);
-  const displayName = names[randomIndex];
+  const { theme, setTheme } = useThemeStore();
+
+  const handleThemeToggle = () => {
+    const currentIndex = THEMES.indexOf(theme);
+    const nextTheme = THEMES[(currentIndex + 1) % THEMES.length];
+    setTheme(nextTheme);
+  };
+
   return (
     <header
       className="bg-base-100 border-b border-base-300 fixed w-full top-0 z-40 
@@ -19,21 +26,15 @@ const Navbar = () => {
               <div className="size-9 rounded-lg bg-primary/10 flex items-center justify-center">
                 <MessageSquare className="w-5 h-5 text-primary" />
               </div>
-              <h1 className="text-lg font-bold">{displayName}</h1>
+              <h1 className="text-lg font-bold brand-word">Lovinks</h1>
             </Link>
           </div>
 
           <div className="flex items-center gap-2">
-            <Link
-              to={"/settings"}
-              className={`
-              btn btn-sm gap-2 transition-colors
-              
-              `}
-            >
-              <Settings className="w-4 h-4" />
-              <span className="hidden sm:inline">Settings</span>
-            </Link>
+            <button className="btn btn-sm gap-2" onClick={handleThemeToggle}>
+              <Palette className="w-4 h-4" />
+              <span className="hidden sm:inline capitalize">{theme}</span>
+            </button>
 
             {authUser && (
               <>
@@ -42,9 +43,13 @@ const Navbar = () => {
                   <span className="hidden sm:inline">Profile</span>
                 </Link>
 
-                <button className="flex gap-2 items-center" onClick={logout}>
+                <button
+                  className="flex items-center justify-center text-base-content hover:text-primary transition-colors"
+                  onClick={logout}
+                  title="Logout"
+                  aria-label="Logout"
+                >
                   <LogOut className="size-5" />
-                  <span className="hidden sm:inline">Logout</span>
                 </button>
               </>
             )}

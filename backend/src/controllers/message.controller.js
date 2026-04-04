@@ -4,6 +4,8 @@ import Message from "../models/message.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
 
+const APP_ASSET_FOLDER = "lovinks";
+
 export const getUsersForSidebar = async (req, res) => {
   try {
     const loggedInUserId = req.user._id;
@@ -20,6 +22,38 @@ export const getMessages = async (req, res) => {
   try {
     const { id: userToChatId } = req.params;
     const myId = req.user._id;
+
+    const readAt = new Date();
+    const unreadMessages = await Message.find({
+      senderId: userToChatId,
+      receiverId: myId,
+      status: { $ne: "read" },
+    }).select("_id");
+
+    if (unreadMessages.length) {
+      const unreadMessageIds = unreadMessages.map((message) => message._id);
+
+      await Message.updateMany(
+        { _id: { $in: unreadMessageIds } },
+        {
+          $set: {
+            status: "read",
+            readAt,
+            deliveredAt: readAt,
+          },
+        }
+      );
+
+      const senderSocketId = getReceiverSocketId(userToChatId);
+      if (senderSocketId) {
+        const serializedUnreadMessageIds = unreadMessageIds.map((id) => id.toString());
+        io.to(senderSocketId).emit("messageStatusUpdated", {
+          messageIds: serializedUnreadMessageIds,
+          status: "read",
+          readAt,
+        });
+      }
+    }
 
     const messages = await Message.find({
       $or: [
@@ -45,22 +79,27 @@ export const sendMessage = async (req, res) => {
     if (image) {
       // Upload base64 image to cloudinary
       const uploadResponse = await cloudinary.uploader.upload(image, {
-        folder: 'lovinks_Messages',
+        folder: APP_ASSET_FOLDER,
+        public_id: `message-${senderId}-${Date.now()}`,
+        resource_type: "image",
       });
-
       imageUrl = uploadResponse.secure_url;
     }
+
+    const receiverSocketId = getReceiverSocketId(receiverId);
+    const isDelivered = Boolean(receiverSocketId);
 
     const newMessage = new Message({
       senderId,
       receiverId,
       text,
       image: imageUrl,
+      status: isDelivered ? "delivered" : "sent",
+      deliveredAt: isDelivered ? new Date() : null,
     });
 
     await newMessage.save();
 
-    const receiverSocketId = getReceiverSocketId(receiverId);
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("newMessage", newMessage);
     }
