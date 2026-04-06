@@ -629,6 +629,17 @@
 		text-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
 	}
 
+	.chat .chat-bubble.message-skeleton-shell,
+	.chat.chat-start .chat-bubble.message-skeleton-shell,
+	.chat.chat-end .chat-bubble.message-skeleton-shell {
+		background: transparent !important;
+		border: none !important;
+		box-shadow: none !important;
+		backdrop-filter: none !important;
+		min-width: 0 !important;
+		padding: 0 !important;
+	}
+
 	.message-options-menu {
 		position: absolute;
 		top: -0.08rem;

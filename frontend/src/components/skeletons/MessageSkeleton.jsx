@@ -21,7 +21,7 @@ const MessageSkeleton = () => {
             </div>
           </div>
 
-          <div className="chat-bubble bg-transparent p-0 border-none shadow-none">
+          <div className="chat-bubble message-skeleton-shell">
             <div
               className={`skeleton h-14 sm:h-16 rounded-2xl ${message.bubble}`}
               style={{ animationDelay: `${idx * 80 + 40}ms` }}
