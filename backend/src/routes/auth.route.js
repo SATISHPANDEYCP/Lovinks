@@ -11,6 +11,7 @@ import {
 	signup,
 	verifyLoginOtp,
 	updateEncryptionPublicKey,
+	getEncryptionPublicKeys,
 	updateProfile,
 } from "../controllers/auth.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
@@ -28,6 +29,7 @@ router.post("/logout", logout);
 
 router.put("/update-profile", protectRoute, updateProfile);
 router.put("/encryption-public-key", protectRoute, updateEncryptionPublicKey);
+router.get("/e2ee-public-keys/:userId", protectRoute, getEncryptionPublicKeys);
 router.delete("/delete-account", protectRoute, deleteAccount);
 
 router.get("/check", protectRoute, checkAuth);

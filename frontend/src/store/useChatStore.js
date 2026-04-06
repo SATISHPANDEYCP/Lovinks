@@ -56,6 +56,24 @@ const hydrateMessageForViewer = async (message, viewerId) => {
   return hydratedMessage;
 };
 
+const fetchLatestUserKeyRing = async (userId, fallbackUser) => {
+  if (!userId) return fallbackUser;
+
+  try {
+    const res = await axiosInstance.get(`/auth/e2ee-public-keys/${userId}`);
+    return {
+      ...(fallbackUser || {}),
+      _id: res.data?._id || fallbackUser?._id,
+      encryptionPublicKey: res.data?.encryptionPublicKey || "",
+      encryptionPublicKeys: Array.isArray(res.data?.encryptionPublicKeys)
+        ? res.data.encryptionPublicKeys
+        : [],
+    };
+  } catch {
+    return fallbackUser;
+  }
+};
+
 export const useChatStore = create((set, get) => ({
   messages: [],
   users: [],
@@ -134,15 +152,52 @@ export const useChatStore = create((set, get) => ({
     const authUser = useAuthStore.getState().authUser;
     const outgoingPayload = { ...messageData };
 
+    const latestSenderKeys = await fetchLatestUserKeyRing("me", authUser);
+    const latestReceiverKeys = await fetchLatestUserKeyRing(selectedUser?._id, selectedUser);
+
+    if (latestSenderKeys && authUser?._id) {
+      useAuthStore.setState((state) => ({
+        authUser: state.authUser
+          ? {
+              ...state.authUser,
+              encryptionPublicKey: latestSenderKeys.encryptionPublicKey || "",
+              encryptionPublicKeys: latestSenderKeys.encryptionPublicKeys || [],
+            }
+          : state.authUser,
+      }));
+    }
+
+    if (latestReceiverKeys?._id) {
+      set((state) => ({
+        selectedUser:
+          state.selectedUser?._id === latestReceiverKeys._id
+            ? {
+                ...state.selectedUser,
+                encryptionPublicKey: latestReceiverKeys.encryptionPublicKey || "",
+                encryptionPublicKeys: latestReceiverKeys.encryptionPublicKeys || [],
+              }
+            : state.selectedUser,
+        users: state.users.map((user) =>
+          user._id === latestReceiverKeys._id
+            ? {
+                ...user,
+                encryptionPublicKey: latestReceiverKeys.encryptionPublicKey || "",
+                encryptionPublicKeys: latestReceiverKeys.encryptionPublicKeys || [],
+              }
+            : user
+        ),
+      }));
+    }
+
     if (
       typeof messageData.text === "string" &&
       messageData.text.trim() &&
-      (selectedUser?.encryptionPublicKey || selectedUser?.encryptionPublicKeys?.length) &&
-      (authUser?.encryptionPublicKey || authUser?.encryptionPublicKeys?.length)
+      (latestReceiverKeys?.encryptionPublicKey || latestReceiverKeys?.encryptionPublicKeys?.length) &&
+      (latestSenderKeys?.encryptionPublicKey || latestSenderKeys?.encryptionPublicKeys?.length)
     ) {
       try {
-        const receiverPublicKeys = getUserDevicePublicKeys(selectedUser);
-        const senderPublicKeys = getUserDevicePublicKeys(authUser);
+        const receiverPublicKeys = getUserDevicePublicKeys(latestReceiverKeys);
+        const senderPublicKeys = getUserDevicePublicKeys(latestSenderKeys);
 
         const encryptedPayload = await encryptTextForUsers({
           text: messageData.text,
@@ -163,12 +218,12 @@ export const useChatStore = create((set, get) => ({
     if (
       typeof messageData.file === "string" &&
       messageData.file &&
-      (selectedUser?.encryptionPublicKey || selectedUser?.encryptionPublicKeys?.length) &&
-      (authUser?.encryptionPublicKey || authUser?.encryptionPublicKeys?.length)
+      (latestReceiverKeys?.encryptionPublicKey || latestReceiverKeys?.encryptionPublicKeys?.length) &&
+      (latestSenderKeys?.encryptionPublicKey || latestSenderKeys?.encryptionPublicKeys?.length)
     ) {
       try {
-        const receiverPublicKeys = getUserDevicePublicKeys(selectedUser);
-        const senderPublicKeys = getUserDevicePublicKeys(authUser);
+        const receiverPublicKeys = getUserDevicePublicKeys(latestReceiverKeys);
+        const senderPublicKeys = getUserDevicePublicKeys(latestSenderKeys);
 
         const encryptedFilePayload = await encryptStringForUsers({
           content: messageData.file,
@@ -184,6 +239,10 @@ export const useChatStore = create((set, get) => ({
           outgoingPayload.encryptedFileKeyForReceiver =
             encryptedFilePayload.encryptedKeyForReceiver;
           outgoingPayload.encryptedFileKeyForSender = encryptedFilePayload.encryptedKeyForSender;
+          outgoingPayload.encryptedFileKeysForReceiverDevices =
+            encryptedFilePayload.encryptedKeysForReceiverDevices;
+          outgoingPayload.encryptedFileKeysForSenderDevices =
+            encryptedFilePayload.encryptedKeysForSenderDevices;
           outgoingPayload.fileEncryptionVersion = encryptedFilePayload.encryptionVersion;
         }
       } catch (error) {
