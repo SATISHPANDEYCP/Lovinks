@@ -90,7 +90,12 @@ export const useChatStore = create((set, get) => ({
 
       set({ users: hydratedUsers });
     } catch (error) {
-      toast.error(error.response.data.message);
+      const message = error.response?.data?.message || "Failed to fetch contacts";
+      if (error.response?.status === 401) {
+        window.localStorage.removeItem("lovinks_auth_token");
+        useAuthStore.getState().logout?.();
+      }
+      toast.error(message);
     } finally {
       set({ isUsersLoading: false });
     }

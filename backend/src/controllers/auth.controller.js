@@ -264,6 +264,9 @@ export const verifyLoginOtp = async (req, res) => {
 
     const token = generateToken(user._id, res);
 
+    res.setHeader("x-auth-token", token);
+    res.setHeader("access-control-expose-headers", "x-auth-token");
+
     res.status(200).json({
       _id: user._id,
       fullName: user.fullName,

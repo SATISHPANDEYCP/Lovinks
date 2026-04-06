@@ -156,8 +156,11 @@ export const useAuthStore = create((set, get) => ({
         otpSessionToken: pendingLoginOtpSessionToken,
       });
 
-      if (res.data?.token) {
-        window.localStorage.setItem(AUTH_TOKEN_KEY, res.data.token);
+      const fallbackToken = res.headers?.["x-auth-token"];
+      const resolvedToken = res.data?.token || fallbackToken;
+
+      if (resolvedToken) {
+        window.localStorage.setItem(AUTH_TOKEN_KEY, resolvedToken);
       }
 
       const userPayload = { ...res.data };
