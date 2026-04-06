@@ -13,9 +13,9 @@ const ChatHeader = () => {
   const formattedLastSeen = formatLastSeen(lastSeen);
 
   return (
-    <div className="p-2.5 border-b border-base-300">
+    <div className="px-3 py-2.5 sm:p-2.5 border-b border-base-300">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
           {/* Avatar */}
           <div className="avatar">
             <div className="size-10 rounded-full relative">
@@ -24,9 +24,9 @@ const ChatHeader = () => {
           </div>
 
           {/* User info */}
-          <div>
-            <h3 className="font-medium">{selectedUser.fullName}</h3>
-            <p className="text-sm text-base-content/70">
+          <div className="min-w-0">
+            <h3 className="font-medium truncate max-w-[180px] sm:max-w-none">{selectedUser.fullName}</h3>
+            <p className="text-xs sm:text-sm text-base-content/70 truncate max-w-[180px] sm:max-w-none">
               {isSelectedUserTyping
                 ? "typing..."
                 : isOnline
@@ -39,8 +39,13 @@ const ChatHeader = () => {
         </div>
 
         {/* Close button */}
-        <button onClick={() => setSelectedUser(null)}>
-          <X />
+        <button
+          type="button"
+          className="btn btn-circle btn-sm"
+          aria-label="Back to contacts"
+          onClick={() => setSelectedUser(null)}
+        >
+          <X className="size-4" />
         </button>
       </div>
     </div>

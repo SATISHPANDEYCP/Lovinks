@@ -60,3 +60,47 @@ export const sendLoginOtpEmail = async ({ to, otp }) => {
     },
   });
 };
+
+export const sendPasswordResetOtpEmail = async ({ to, otp }) => {
+  const from = process.env.EMAIL_FROM || process.env.EMAIL;
+
+  if (!from || !to || !otp) {
+    throw new Error("Missing required email fields");
+  }
+
+  const subject = "Reset your Lovinks password";
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.6;">
+      <h2 style="margin-bottom: 8px;">Lovinks Password Reset</h2>
+      <p style="margin-top: 0;">Use this OTP to reset your password:</p>
+      <div style="font-size: 24px; font-weight: 700; letter-spacing: 4px; margin: 14px 0;">
+        ${otp}
+      </div>
+      <p style="margin: 0;">This OTP will expire in 5 minutes.</p>
+      <p style="margin-top: 12px;">If you did not request this, you can ignore this email.</p>
+    </div>
+  `;
+
+  const text = `Lovinks Password Reset\n\nYour OTP is: ${otp}\nThis OTP will expire in 5 minutes.`;
+
+  const message = [
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/html; charset=UTF-8",
+    "",
+    html,
+    "",
+    text,
+  ].join("\n");
+
+  const gmail = await getGmailClient();
+
+  await gmail.users.messages.send({
+    userId: "me",
+    requestBody: {
+      raw: encodeEmail(message),
+    },
+  });
+};

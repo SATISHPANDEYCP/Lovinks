@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { X } from "lucide-react";
 
 const LAST_UPDATED = "April 6, 2026";
 
@@ -6,6 +7,11 @@ const PrivacyPage = () => {
   return (
     <div className="min-h-screen pt-20 pb-10 px-4">
       <div className="mx-auto max-w-3xl rounded-xl border border-base-300 bg-base-100 p-5 sm:p-7">
+        <div className="flex justify-end">
+          <Link to="/login" className="btn btn-circle btn-sm" aria-label="Close privacy page">
+            <X className="size-4" />
+          </Link>
+        </div>
         <h1 className="text-2xl font-bold">Privacy Policy</h1>
         <p className="mt-2 text-sm text-base-content/70">
           Your privacy matters to us. This Privacy Policy explains what information we collect, how

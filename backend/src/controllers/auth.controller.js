@@ -4,7 +4,7 @@ import Message from "../models/message.model.js";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import cloudinary from "../lib/cloudinary.js";
-import { sendLoginOtpEmail } from "../lib/gmail.js";
+import { sendLoginOtpEmail, sendPasswordResetOtpEmail } from "../lib/gmail.js";
 
 const MAX_PROFILE_PIC_SIZE_BYTES = 5 * 1024 * 1024;
 const APP_ASSET_FOLDER = "lovinks";
@@ -20,6 +20,13 @@ const clearLoginOtpState = {
   loginOtpExpiresAt: null,
   loginOtpSessionHash: "",
   loginOtpAttempts: 0,
+};
+
+const clearPasswordResetOtpState = {
+  passwordResetOtpHash: "",
+  passwordResetOtpExpiresAt: null,
+  passwordResetOtpSessionHash: "",
+  passwordResetOtpAttempts: 0,
 };
 
 const getBase64SizeInBytes = (base64String) => {
@@ -280,6 +287,155 @@ export const resendLoginOtp = async (req, res) => {
     res.status(200).json({ message: "OTP resent to your email" });
   } catch (error) {
     console.log("Error in resendLoginOtp controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const requestPasswordResetOtp = async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "No account found with this email" });
+    }
+
+    const otp = generateOtpCode();
+    const otpSessionToken = crypto.randomBytes(32).toString("hex");
+
+    user.passwordResetOtpHash = hashValue(otp);
+    user.passwordResetOtpSessionHash = hashValue(otpSessionToken);
+    user.passwordResetOtpExpiresAt = new Date(Date.now() + OTP_VALIDITY_MS);
+    user.passwordResetOtpAttempts = 0;
+    await user.save();
+
+    try {
+      await sendPasswordResetOtpEmail({ to: user.email, otp });
+    } catch (error) {
+      await User.findByIdAndUpdate(user._id, { $set: clearPasswordResetOtpState });
+      return res.status(500).json({ message: "Failed to send password reset OTP" });
+    }
+
+    res.status(200).json({
+      email: user.email,
+      otpSessionToken,
+      message: "Password reset OTP sent to your email",
+    });
+  } catch (error) {
+    console.log("Error in requestPasswordResetOtp controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const resendPasswordResetOtp = async (req, res) => {
+  const { email, otpSessionToken } = req.body;
+
+  try {
+    if (!email || !otpSessionToken) {
+      return res.status(400).json({ message: "Email and session token are required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid resend request" });
+    }
+
+    if (
+      !user.passwordResetOtpSessionHash ||
+      hashValue(otpSessionToken) !== user.passwordResetOtpSessionHash
+    ) {
+      return res.status(400).json({ message: "Session expired. Start forgot password again." });
+    }
+
+    const otp = generateOtpCode();
+    user.passwordResetOtpHash = hashValue(otp);
+    user.passwordResetOtpExpiresAt = new Date(Date.now() + OTP_VALIDITY_MS);
+    user.passwordResetOtpAttempts = 0;
+    await user.save();
+
+    try {
+      await sendPasswordResetOtpEmail({ to: user.email, otp });
+    } catch (error) {
+      return res.status(500).json({ message: "Failed to resend password reset OTP" });
+    }
+
+    res.status(200).json({ message: "Password reset OTP resent to your email" });
+  } catch (error) {
+    console.log("Error in resendPasswordResetOtp controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const resetPasswordWithOtp = async (req, res) => {
+  const { email, otp, otpSessionToken, newPassword } = req.body;
+
+  try {
+    if (!email || !otp || !otpSessionToken || !newPassword) {
+      return res
+        .status(400)
+        .json({ message: "Email, OTP, session token and new password are required" });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid reset request" });
+    }
+
+    if (
+      !user.passwordResetOtpHash ||
+      !user.passwordResetOtpSessionHash ||
+      !user.passwordResetOtpExpiresAt
+    ) {
+      return res.status(400).json({ message: "No active password reset request found" });
+    }
+
+    if (user.passwordResetOtpExpiresAt.getTime() < Date.now()) {
+      await User.findByIdAndUpdate(user._id, { $set: clearPasswordResetOtpState });
+      return res.status(400).json({ message: "OTP expired. Please try again." });
+    }
+
+    if (user.passwordResetOtpAttempts >= OTP_MAX_ATTEMPTS) {
+      await User.findByIdAndUpdate(user._id, { $set: clearPasswordResetOtpState });
+      return res.status(429).json({ message: "Too many invalid attempts. Please try again." });
+    }
+
+    const isSessionValid = hashValue(otpSessionToken) === user.passwordResetOtpSessionHash;
+    const isOtpValid = hashValue(otp) === user.passwordResetOtpHash;
+
+    if (!isSessionValid || !isOtpValid) {
+      user.passwordResetOtpAttempts += 1;
+
+      if (user.passwordResetOtpAttempts >= OTP_MAX_ATTEMPTS) {
+        user.passwordResetOtpHash = "";
+        user.passwordResetOtpSessionHash = "";
+        user.passwordResetOtpExpiresAt = null;
+        user.passwordResetOtpAttempts = 0;
+      }
+
+      await user.save();
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    user.isEmailVerified = true;
+    user.passwordResetOtpHash = "";
+    user.passwordResetOtpSessionHash = "";
+    user.passwordResetOtpExpiresAt = null;
+    user.passwordResetOtpAttempts = 0;
+    await user.save();
+
+    res.status(200).json({ message: "Password reset successful. You can login now." });
+  } catch (error) {
+    console.log("Error in resetPasswordWithOtp controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };

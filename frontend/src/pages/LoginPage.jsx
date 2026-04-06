@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuthStore } from "../store/useAuthStore";
 import AuthImagePattern from "../components/AuthImagePattern";
 import { Link } from "react-router-dom";
-import { Eye, EyeOff, Loader2, Lock, Mail, MessageSquare } from "lucide-react";
+import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react";
 
 const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -40,18 +40,17 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen pt-16 grid lg:grid-cols-2 lg:overflow-hidden">
+    <div className="min-h-[calc(100dvh-4rem)] grid lg:grid-cols-2 lg:overflow-hidden">
       {/* Left Side - Form */}
-      <div className="flex flex-col justify-center items-center p-6 sm:p-12">
-        <div className="w-full max-w-md space-y-8">
+      <div className="flex flex-col justify-center items-center p-4 sm:p-8">
+        <div className="w-full max-w-md space-y-6">
           {/* Logo */}
-          <div className="text-center mb-8">
+          <div className="text-center mb-4">
             <div className="flex flex-col items-center gap-2 group">
               <div
-                className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20
-              transition-colors"
+                className="w-12 h-12 flex items-center justify-center"
               >
-                <MessageSquare className="w-6 h-6 text-primary" />
+                <img src="/lovinks.png" alt="Lovinks" className="w-10 h-10 object-contain" />
               </div>
               <h1 className="text-2xl font-bold mt-2">Welcome Back</h1>
               <p className="text-base-content/60">Sign in to your account</p>
@@ -60,7 +59,7 @@ const LoginPage = () => {
 
           {/* Form */}
           {!isOtpStep ? (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-3.5">
               <div className="form-control">
                 <label className="label">
                   <span className="label-text font-medium">Email</span>
@@ -118,6 +117,12 @@ const LoginPage = () => {
                   "Sign in"
                 )}
               </button>
+
+              <p className="text-right text-sm text-base-content/60">
+                <Link to="/forgot-password" className="link link-primary">
+                  Forgot password?
+                </Link>
+              </p>
             </form>
           ) : (
             <form onSubmit={handleVerifyOtp} className="space-y-4">

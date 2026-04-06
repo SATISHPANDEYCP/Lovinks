@@ -1,11 +1,13 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
-import { Camera, Mail, User } from "lucide-react";
+import { Camera, Mail, User, X } from "lucide-react";
 import toast from "react-hot-toast";
 
 const MAX_PROFILE_PIC_SIZE_BYTES = 5 * 1024 * 1024;
 
 const ProfilePage = () => {
+  const navigate = useNavigate();
   const { authUser, isUpdatingProfile, isDeletingAccount, updateProfile, deleteAccount } =
     useAuthStore();
   const [selectedImg, setSelectedImg] = useState(null);
@@ -59,7 +61,15 @@ const ProfilePage = () => {
     <div className="min-h-screen pt-20">
       <div className="max-w-md mx-auto px-4 py-6">
         <div className="bg-base-300 rounded-xl p-4 sm:p-5 space-y-5">
-          <div className="text-center">
+          <div className="relative text-center">
+            <button
+              type="button"
+              className="btn btn-circle btn-sm absolute -top-1 right-0"
+              aria-label="Close profile"
+              onClick={() => navigate("/")}
+            >
+              <X className="size-4" />
+            </button>
             <h1 className="text-xl font-semibold">Profile</h1>
             <p className="mt-1 text-sm text-base-content/70">Your profile information</p>
           </div>
@@ -158,6 +168,15 @@ const ProfilePage = () => {
           />
 
           <div className="relative w-full max-w-md rounded-xl border border-red-500/35 bg-base-100 p-5 shadow-2xl">
+            <button
+              type="button"
+              className="btn btn-circle btn-sm absolute top-2 right-2"
+              aria-label="Close delete account dialog"
+              onClick={closeDeleteModal}
+              disabled={isDeletingAccount}
+            >
+              <X className="size-4" />
+            </button>
             <h3 className="text-lg font-semibold text-red-400">Delete Account</h3>
             <p className="mt-2 text-sm text-base-content/75">
               This action is permanent. Your profile, chats, and media will be deleted forever.

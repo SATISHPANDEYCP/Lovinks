@@ -12,11 +12,16 @@ export const useAuthStore = create((set, get) => ({
   isLoggingIn: false,
   isVerifyingLoginOtp: false,
   isResendingLoginOtp: false,
+  isRequestingPasswordResetOtp: false,
+  isResendingPasswordResetOtp: false,
+  isResettingPasswordWithOtp: false,
   isUpdatingProfile: false,
   isDeletingAccount: false,
   isCheckingAuth: true,
   pendingLoginOtpEmail: "",
   pendingLoginOtpSessionToken: "",
+  pendingPasswordResetEmail: "",
+  pendingPasswordResetSessionToken: "",
   onlineUsers: [],
   userPresence: {},
   socket: null,
@@ -178,10 +183,93 @@ export const useAuthStore = create((set, get) => ({
       isResendingLoginOtp: false,
     }),
 
+  requestPasswordResetOtp: async (email) => {
+    set({ isRequestingPasswordResetOtp: true });
+    try {
+      const res = await axiosInstance.post("/auth/forgot-password", { email });
+      set({
+        pendingPasswordResetEmail: res.data.email,
+        pendingPasswordResetSessionToken: res.data.otpSessionToken,
+      });
+      toast.success(res.data.message || "OTP sent to your email");
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to send password reset OTP");
+    } finally {
+      set({ isRequestingPasswordResetOtp: false });
+    }
+  },
+
+  resendPasswordResetOtp: async () => {
+    const { pendingPasswordResetEmail, pendingPasswordResetSessionToken } = get();
+    if (!pendingPasswordResetEmail || !pendingPasswordResetSessionToken) {
+      toast.error("Reset session expired. Start again.");
+      return;
+    }
+
+    set({ isResendingPasswordResetOtp: true });
+    try {
+      await axiosInstance.post("/auth/forgot-password/resend-otp", {
+        email: pendingPasswordResetEmail,
+        otpSessionToken: pendingPasswordResetSessionToken,
+      });
+      toast.success("OTP resent to your email");
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to resend OTP");
+    } finally {
+      set({ isResendingPasswordResetOtp: false });
+    }
+  },
+
+  resetPasswordWithOtp: async ({ otp, newPassword }) => {
+    const { pendingPasswordResetEmail, pendingPasswordResetSessionToken } = get();
+    if (!pendingPasswordResetEmail || !pendingPasswordResetSessionToken) {
+      toast.error("Reset session expired. Start again.");
+      return false;
+    }
+
+    set({ isResettingPasswordWithOtp: true });
+    try {
+      const res = await axiosInstance.post("/auth/forgot-password/reset", {
+        email: pendingPasswordResetEmail,
+        otp,
+        otpSessionToken: pendingPasswordResetSessionToken,
+        newPassword,
+      });
+
+      set({
+        pendingPasswordResetEmail: "",
+        pendingPasswordResetSessionToken: "",
+      });
+
+      toast.success(res.data.message || "Password reset successful");
+      return true;
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to reset password");
+      return false;
+    } finally {
+      set({ isResettingPasswordWithOtp: false });
+    }
+  },
+
+  cancelPasswordResetFlow: () =>
+    set({
+      pendingPasswordResetEmail: "",
+      pendingPasswordResetSessionToken: "",
+      isRequestingPasswordResetOtp: false,
+      isResendingPasswordResetOtp: false,
+      isResettingPasswordWithOtp: false,
+    }),
+
   logout: async () => {
     try {
       await axiosInstance.post("/auth/logout");
-      set({ authUser: null, pendingLoginOtpEmail: "", pendingLoginOtpSessionToken: "" });
+      set({
+        authUser: null,
+        pendingLoginOtpEmail: "",
+        pendingLoginOtpSessionToken: "",
+        pendingPasswordResetEmail: "",
+        pendingPasswordResetSessionToken: "",
+      });
       toast.success("Logged out successfully");
       get().disconnectSocket();
     } catch (error) {
@@ -201,6 +289,8 @@ export const useAuthStore = create((set, get) => ({
         userPresence: {},
         pendingLoginOtpEmail: "",
         pendingLoginOtpSessionToken: "",
+        pendingPasswordResetEmail: "",
+        pendingPasswordResetSessionToken: "",
       });
       get().disconnectSocket();
       toast.success("Account deleted successfully");

@@ -155,7 +155,7 @@ const MessageInput = () => {
   };
 
   return (
-    <div className="w-full p-3 sm:p-4 border-t border-base-300 bg-base-100/80 backdrop-blur">
+    <div className="w-full p-2.5 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+0.55rem)] border-t border-base-300 bg-base-100/80 backdrop-blur">
       {(imagePreview || fileData) && (
         <div className="mb-3 flex items-center gap-2">
           <div className="relative">
@@ -193,7 +193,7 @@ const MessageInput = () => {
 
       <form
         onSubmit={handleSendMessage}
-        className="flex items-center gap-2 rounded-2xl border border-base-300/80 bg-base-100/70 px-2 py-2"
+        className="flex items-center gap-1.5 sm:gap-2 rounded-2xl border border-base-300/80 bg-base-100/70 px-2 py-2"
       >
         <div className="flex-1 flex gap-2">
           <input
@@ -213,7 +213,7 @@ const MessageInput = () => {
 
           <button
             type="button"
-            className={`btn btn-circle p-0 items-center justify-center transition-transform hover:scale-105
+            className={`btn btn-circle p-0 size-10 sm:size-auto items-center justify-center transition-transform hover:scale-105
                      ${fileData || imagePreview ? "text-emerald-500" : "text-base-content/60"}`}
             onClick={() => fileInputRef.current?.click()}
           >
@@ -222,7 +222,7 @@ const MessageInput = () => {
         </div>
         <button
           type="submit"
-          className="btn btn-sm btn-circle p-0 items-center justify-center transition-transform hover:scale-105"
+          className="btn btn-sm btn-circle p-0 size-10 sm:size-auto items-center justify-center transition-transform hover:scale-105"
           disabled={(!text.trim() && !fileData && !imagePreview) || isUploading || isSending}
         >
           {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}

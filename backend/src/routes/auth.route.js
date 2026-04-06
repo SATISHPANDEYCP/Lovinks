@@ -4,7 +4,10 @@ import {
 	deleteAccount,
 	login,
 	logout,
+	requestPasswordResetOtp,
 	resendLoginOtp,
+	resendPasswordResetOtp,
+	resetPasswordWithOtp,
 	signup,
 	verifyLoginOtp,
 	updateEncryptionPublicKey,
@@ -18,6 +21,9 @@ router.post("/signup", signup);
 router.post("/login", login);
 router.post("/verify-login-otp", verifyLoginOtp);
 router.post("/resend-login-otp", resendLoginOtp);
+router.post("/forgot-password", requestPasswordResetOtp);
+router.post("/forgot-password/resend-otp", resendPasswordResetOtp);
+router.post("/forgot-password/reset", resetPasswordWithOtp);
 router.post("/logout", logout);
 
 router.put("/update-profile", protectRoute, updateProfile);

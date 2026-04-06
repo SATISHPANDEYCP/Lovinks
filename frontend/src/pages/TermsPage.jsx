@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { X } from "lucide-react";
 
 const LAST_UPDATED = "April 6, 2026";
 
@@ -6,6 +7,11 @@ const TermsPage = () => {
   return (
     <div className="min-h-screen pt-20 pb-10 px-4">
       <div className="mx-auto max-w-3xl rounded-xl border border-base-300 bg-base-100 p-5 sm:p-7">
+        <div className="flex justify-end">
+          <Link to="/login" className="btn btn-circle btn-sm" aria-label="Close terms page">
+            <X className="size-4" />
+          </Link>
+        </div>
         <h1 className="text-2xl font-bold">Terms of Service</h1>
         <p className="mt-2 text-sm text-base-content/70">
           These Terms of Service govern your access to and use of Lovinks. By using the app, you

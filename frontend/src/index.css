@@ -180,6 +180,17 @@
 		box-shadow: 0 0 0 3px rgb(var(--color-primary) / 0.14);
 	}
 
+	.input:-webkit-autofill,
+	.input:-webkit-autofill:hover,
+	.input:-webkit-autofill:focus,
+	.input:-webkit-autofill:active {
+		-webkit-text-fill-color: rgb(var(--color-base-content));
+		transition: background-color 9999s ease-in-out 0s;
+		-webkit-box-shadow: 0 0 0px 1000px rgb(var(--color-base-100)) inset;
+		box-shadow: 0 0 0px 1000px rgb(var(--color-base-100)) inset;
+		caret-color: rgb(var(--color-base-content));
+	}
+
 	.input-sm {
 		min-height: 2rem;
 		padding-block: 0.35rem;
@@ -563,7 +574,7 @@
 	.message-bubble-wrap {
 		position: relative;
 		max-width: 100%;
-		overflow-x: clip;
+		overflow: visible;
 	}
 
 	.message-options-trigger {
@@ -629,7 +640,7 @@
 		border: 1px solid rgb(var(--color-base-content) / 0.14);
 		background: rgb(var(--color-base-100));
 		box-shadow: 0 12px 30px rgb(0 0 0 / 0.22);
-		z-index: 25;
+		z-index: 40;
 	}
 
 	.message-options-close {
@@ -653,11 +664,12 @@
 	}
 
 	.message-options-menu-end {
-		right: 1.3rem;
+		right: 0.2rem;
 	}
 
 	.message-options-menu-start {
-		right: 1.3rem;
+		left: 0.2rem;
+		right: auto;
 	}
 
 	.message-options-item {
@@ -736,7 +748,8 @@
 		}
 
 		.message-options-menu {
-			max-width: min(72vw, 10rem);
+			min-width: 9.2rem;
+			max-width: min(84vw, 12rem);
 		}
 	}
 
