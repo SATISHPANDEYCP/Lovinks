@@ -28,6 +28,23 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    encryptionPublicKeys: [
+      {
+        _id: false,
+        deviceId: {
+          type: String,
+          required: true,
+        },
+        encryptionPublicKey: {
+          type: String,
+          required: true,
+        },
+        updatedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
     isEmailVerified: {
       type: Boolean,
       default: false,

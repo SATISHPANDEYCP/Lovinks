@@ -36,7 +36,7 @@ export const getUsersForSidebar = async (req, res) => {
         })
           .sort({ createdAt: -1 })
           .select(
-            "text encryptedText encryptionIv encryptedKeyForReceiver encryptedKeyForSender image createdAt senderId receiverId"
+            "text encryptedText encryptionIv encryptedKeyForReceiver encryptedKeysForReceiverDevices encryptedKeyForSender encryptedKeysForSenderDevices image createdAt senderId receiverId"
           )
           .lean();
 
@@ -138,11 +138,15 @@ export const sendMessage = async (req, res) => {
       encryptionIv,
       encryptedKeyForReceiver,
       encryptedKeyForSender,
+      encryptedKeysForReceiverDevices,
+      encryptedKeysForSenderDevices,
       encryptionVersion,
       encryptedFileData,
       fileEncryptionIv,
       encryptedFileKeyForReceiver,
       encryptedFileKeyForSender,
+      encryptedFileKeysForReceiverDevices,
+      encryptedFileKeysForSenderDevices,
       fileEncryptionVersion,
     } = req.body;
     const { id: receiverId } = req.params;
@@ -202,11 +206,19 @@ export const sendMessage = async (req, res) => {
     const newMessage = new Message({
       senderId,
       receiverId,
-      text: encryptedText ? "" : text,
+      text: typeof text === "string" ? text : "",
       encryptedText: typeof encryptedText === "string" ? encryptedText : "",
       encryptionIv: typeof encryptionIv === "string" ? encryptionIv : "",
       encryptedKeyForReceiver: typeof encryptedKeyForReceiver === "string" ? encryptedKeyForReceiver : "",
       encryptedKeyForSender: typeof encryptedKeyForSender === "string" ? encryptedKeyForSender : "",
+      encryptedKeysForReceiverDevices:
+        encryptedKeysForReceiverDevices && typeof encryptedKeysForReceiverDevices === "object"
+          ? encryptedKeysForReceiverDevices
+          : {},
+      encryptedKeysForSenderDevices:
+        encryptedKeysForSenderDevices && typeof encryptedKeysForSenderDevices === "object"
+          ? encryptedKeysForSenderDevices
+          : {},
       encryptionVersion: typeof encryptionVersion === "string" ? encryptionVersion : "",
       encryptedFileData: typeof encryptedFileData === "string" ? encryptedFileData : "",
       fileEncryptionIv: typeof fileEncryptionIv === "string" ? fileEncryptionIv : "",
@@ -214,6 +226,14 @@ export const sendMessage = async (req, res) => {
         typeof encryptedFileKeyForReceiver === "string" ? encryptedFileKeyForReceiver : "",
       encryptedFileKeyForSender:
         typeof encryptedFileKeyForSender === "string" ? encryptedFileKeyForSender : "",
+      encryptedFileKeysForReceiverDevices:
+        encryptedFileKeysForReceiverDevices && typeof encryptedFileKeysForReceiverDevices === "object"
+          ? encryptedFileKeysForReceiverDevices
+          : {},
+      encryptedFileKeysForSenderDevices:
+        encryptedFileKeysForSenderDevices && typeof encryptedFileKeysForSenderDevices === "object"
+          ? encryptedFileKeysForSenderDevices
+          : {},
       fileEncryptionVersion: typeof fileEncryptionVersion === "string" ? fileEncryptionVersion : "",
       image: imageUrl,
       fileUrl,

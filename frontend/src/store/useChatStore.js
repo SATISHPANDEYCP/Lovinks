@@ -7,6 +7,7 @@ import {
   decryptTextForMessage,
   encryptStringForUsers,
   encryptTextForUsers,
+  getUserDevicePublicKeys,
 } from "../lib/e2ee";
 
 const getLastConversationMessage = (messages, authUserId, selectedUserId) => {
@@ -37,6 +38,8 @@ const hydrateMessageForViewer = async (message, viewerId) => {
       encryptionIv: message.fileEncryptionIv,
       encryptedKeyForReceiver: message.encryptedFileKeyForReceiver,
       encryptedKeyForSender: message.encryptedFileKeyForSender,
+      encryptedKeysForReceiverDevices: message.encryptedFileKeysForReceiverDevices,
+      encryptedKeysForSenderDevices: message.encryptedFileKeysForSenderDevices,
       viewerId,
       senderId: message.senderId,
       fallbackText: "",
@@ -134,18 +137,20 @@ export const useChatStore = create((set, get) => ({
     if (
       typeof messageData.text === "string" &&
       messageData.text.trim() &&
-      selectedUser?.encryptionPublicKey &&
-      authUser?.encryptionPublicKey
+      (selectedUser?.encryptionPublicKey || selectedUser?.encryptionPublicKeys?.length) &&
+      (authUser?.encryptionPublicKey || authUser?.encryptionPublicKeys?.length)
     ) {
       try {
+        const receiverPublicKeys = getUserDevicePublicKeys(selectedUser);
+        const senderPublicKeys = getUserDevicePublicKeys(authUser);
+
         const encryptedPayload = await encryptTextForUsers({
           text: messageData.text,
-          receiverPublicKey: JSON.parse(selectedUser.encryptionPublicKey),
-          senderPublicKey: JSON.parse(authUser.encryptionPublicKey),
+          receiverPublicKeys,
+          senderPublicKeys,
         });
 
         if (encryptedPayload) {
-          outgoingPayload.text = "";
           Object.assign(outgoingPayload, encryptedPayload);
         }
       } catch (error) {
@@ -158,14 +163,17 @@ export const useChatStore = create((set, get) => ({
     if (
       typeof messageData.file === "string" &&
       messageData.file &&
-      selectedUser?.encryptionPublicKey &&
-      authUser?.encryptionPublicKey
+      (selectedUser?.encryptionPublicKey || selectedUser?.encryptionPublicKeys?.length) &&
+      (authUser?.encryptionPublicKey || authUser?.encryptionPublicKeys?.length)
     ) {
       try {
+        const receiverPublicKeys = getUserDevicePublicKeys(selectedUser);
+        const senderPublicKeys = getUserDevicePublicKeys(authUser);
+
         const encryptedFilePayload = await encryptStringForUsers({
           content: messageData.file,
-          receiverPublicKey: JSON.parse(selectedUser.encryptionPublicKey),
-          senderPublicKey: JSON.parse(authUser.encryptionPublicKey),
+          receiverPublicKeys,
+          senderPublicKeys,
         });
 
         if (encryptedFilePayload) {

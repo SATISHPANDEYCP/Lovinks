@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { axiosInstance } from "../lib/axios.js";
 import toast from "react-hot-toast";
 import { io } from "socket.io-client";
-import { ensureLocalUserKeyPair } from "../lib/e2ee";
+import { ensureLocalUserKeyPair, getLocalDeviceId } from "../lib/e2ee";
 
 const SOCKET_BASE_URL =
   import.meta.env.VITE_SOCKET_URL ||
@@ -36,13 +36,18 @@ export const useAuthStore = create((set, get) => ({
     try {
       const { publicKeyJwk } = await ensureLocalUserKeyPair(authUser._id);
       const serializedPublicKey = JSON.stringify(publicKeyJwk);
+      const deviceId = getLocalDeviceId();
+      const isCurrentDeviceRegistered = Array.isArray(authUser.encryptionPublicKeys)
+        ? authUser.encryptionPublicKeys.some((item) => item?.deviceId === deviceId)
+        : false;
 
-      if (authUser.encryptionPublicKey === serializedPublicKey) {
+      if (authUser.encryptionPublicKey === serializedPublicKey && isCurrentDeviceRegistered) {
         return;
       }
 
       const res = await axiosInstance.put("/auth/encryption-public-key", {
         encryptionPublicKey: serializedPublicKey,
+        deviceId,
       });
 
       set((state) => ({
@@ -50,6 +55,7 @@ export const useAuthStore = create((set, get) => ({
           ? {
               ...state.authUser,
               encryptionPublicKey: res.data.encryptionPublicKey,
+              encryptionPublicKeys: res.data.encryptionPublicKeys || [],
             }
           : state.authUser,
       }));

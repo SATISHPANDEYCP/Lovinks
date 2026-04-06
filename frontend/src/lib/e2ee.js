@@ -8,6 +8,7 @@ const RSA_ALGORITHM = {
 const AES_ALGORITHM_NAME = "AES-GCM";
 const AES_KEY_LENGTH = 256;
 const E2EE_VERSION = "rsa-aes-gcm-v1";
+const DEVICE_ID_STORAGE_KEY = "chat-e2ee-device-id";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -32,6 +33,20 @@ const fromBase64 = (base64) => {
 
 const getStorageKey = (userId, type) => `chat-e2ee-${type}-${userId}`;
 
+export const getLocalDeviceId = () => {
+  let deviceId = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+  if (deviceId) return deviceId;
+
+  if (typeof crypto.randomUUID === "function") {
+    deviceId = crypto.randomUUID();
+  } else {
+    deviceId = `device-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+  return deviceId;
+};
+
 const parseStoredJwk = (value) => {
   if (!value) return null;
 
@@ -47,6 +62,60 @@ const importPublicKey = async (publicKeyJwk) =>
 
 const importPrivateKey = async (privateKeyJwk) =>
   crypto.subtle.importKey("jwk", privateKeyJwk, RSA_ALGORITHM, true, ["decrypt"]);
+
+const parsePublicKeyJwk = (value) => {
+  if (!value || typeof value !== "string") return null;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+export const getUserDevicePublicKeys = (user) => {
+  const output = [];
+
+  if (Array.isArray(user?.encryptionPublicKeys)) {
+    user.encryptionPublicKeys.forEach((item) => {
+      const deviceId = String(item?.deviceId || "").trim();
+      const publicKeyJwk = parsePublicKeyJwk(item?.encryptionPublicKey);
+
+      if (deviceId && publicKeyJwk) {
+        output.push({ deviceId, publicKeyJwk });
+      }
+    });
+  }
+
+  if (!output.length) {
+    const legacyPublicKeyJwk = parsePublicKeyJwk(user?.encryptionPublicKey);
+    if (legacyPublicKeyJwk) {
+      output.push({ deviceId: "legacy", publicKeyJwk: legacyPublicKeyJwk });
+    }
+  }
+
+  // Deduplicate by deviceId while preserving latest item order.
+  const unique = new Map();
+  output.forEach((item) => unique.set(item.deviceId, item));
+  return Array.from(unique.values());
+};
+
+const normalizeDeviceKeyInput = ({ keyList, singleKey, fallbackDeviceId }) => {
+  if (Array.isArray(keyList) && keyList.length) {
+    return keyList
+      .filter((item) => item?.publicKeyJwk)
+      .map((item) => ({
+        deviceId: String(item.deviceId || fallbackDeviceId).trim() || fallbackDeviceId,
+        publicKeyJwk: item.publicKeyJwk,
+      }));
+  }
+
+  if (singleKey) {
+    return [{ deviceId: fallbackDeviceId, publicKeyJwk: singleKey }];
+  }
+
+  return [];
+};
 
 export const ensureLocalUserKeyPair = async (userId) => {
   if (!userId) throw new Error("Missing user id for encryption key setup");
@@ -74,13 +143,21 @@ export const ensureLocalUserKeyPair = async (userId) => {
   return { privateKeyJwk, publicKeyJwk };
 };
 
-export const encryptTextForUsers = async ({ text, receiverPublicKey, senderPublicKey }) => {
-  if (!text || !receiverPublicKey || !senderPublicKey) return null;
+export const encryptTextForUsers = async ({
+  text,
+  receiverPublicKey,
+  senderPublicKey,
+  receiverPublicKeys,
+  senderPublicKeys,
+}) => {
+  if (!text) return null;
 
   const encryptedPayload = await encryptStringForUsers({
     content: text,
     receiverPublicKey,
     senderPublicKey,
+    receiverPublicKeys,
+    senderPublicKeys,
   });
 
   if (!encryptedPayload) return null;
@@ -90,12 +167,33 @@ export const encryptTextForUsers = async ({ text, receiverPublicKey, senderPubli
     encryptionIv: encryptedPayload.encryptionIv,
     encryptedKeyForReceiver: encryptedPayload.encryptedKeyForReceiver,
     encryptedKeyForSender: encryptedPayload.encryptedKeyForSender,
+    encryptedKeysForReceiverDevices: encryptedPayload.encryptedKeysForReceiverDevices,
+    encryptedKeysForSenderDevices: encryptedPayload.encryptedKeysForSenderDevices,
     encryptionVersion: encryptedPayload.encryptionVersion,
   };
 };
 
-export const encryptStringForUsers = async ({ content, receiverPublicKey, senderPublicKey }) => {
-  if (!content || !receiverPublicKey || !senderPublicKey) return null;
+export const encryptStringForUsers = async ({
+  content,
+  receiverPublicKey,
+  senderPublicKey,
+  receiverPublicKeys,
+  senderPublicKeys,
+}) => {
+  if (!content) return null;
+
+  const normalizedReceiverPublicKeys = normalizeDeviceKeyInput({
+    keyList: receiverPublicKeys,
+    singleKey: receiverPublicKey,
+    fallbackDeviceId: "receiver-primary",
+  });
+  const normalizedSenderPublicKeys = normalizeDeviceKeyInput({
+    keyList: senderPublicKeys,
+    singleKey: senderPublicKey,
+    fallbackDeviceId: "sender-primary",
+  });
+
+  if (!normalizedReceiverPublicKeys.length || !normalizedSenderPublicKeys.length) return null;
 
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const aesKey = await crypto.subtle.generateKey(
@@ -118,17 +216,31 @@ export const encryptStringForUsers = async ({ content, receiverPublicKey, sender
 
   const rawAesKey = await crypto.subtle.exportKey("raw", aesKey);
 
-  const receiverKey = await importPublicKey(receiverPublicKey);
-  const senderKey = await importPublicKey(senderPublicKey);
+  const encryptedKeysForReceiverDevices = {};
+  for (const keyEntry of normalizedReceiverPublicKeys) {
+    const importedKey = await importPublicKey(keyEntry.publicKeyJwk);
+    const encryptedKey = await crypto.subtle.encrypt(RSA_ALGORITHM, importedKey, rawAesKey);
+    encryptedKeysForReceiverDevices[keyEntry.deviceId] = toBase64(encryptedKey);
+  }
 
-  const encryptedKeyForReceiver = await crypto.subtle.encrypt(RSA_ALGORITHM, receiverKey, rawAesKey);
-  const encryptedKeyForSender = await crypto.subtle.encrypt(RSA_ALGORITHM, senderKey, rawAesKey);
+  const encryptedKeysForSenderDevices = {};
+  for (const keyEntry of normalizedSenderPublicKeys) {
+    const importedKey = await importPublicKey(keyEntry.publicKeyJwk);
+    const encryptedKey = await crypto.subtle.encrypt(RSA_ALGORITHM, importedKey, rawAesKey);
+    encryptedKeysForSenderDevices[keyEntry.deviceId] = toBase64(encryptedKey);
+  }
+
+  const encryptedKeyForReceiver =
+    encryptedKeysForReceiverDevices[normalizedReceiverPublicKeys[0].deviceId] || "";
+  const encryptedKeyForSender = encryptedKeysForSenderDevices[normalizedSenderPublicKeys[0].deviceId] || "";
 
   return {
     encryptedData: toBase64(encryptedBuffer),
     encryptionIv: toBase64(iv.buffer),
-    encryptedKeyForReceiver: toBase64(encryptedKeyForReceiver),
-    encryptedKeyForSender: toBase64(encryptedKeyForSender),
+    encryptedKeyForReceiver,
+    encryptedKeyForSender,
+    encryptedKeysForReceiverDevices,
+    encryptedKeysForSenderDevices,
     encryptionVersion: E2EE_VERSION,
   };
 };
@@ -136,14 +248,21 @@ export const encryptStringForUsers = async ({ content, receiverPublicKey, sender
 export const decryptTextForMessage = async ({ message, viewerId }) => {
   if (!message?.encryptedText) return message?.text || "";
 
+  const senderFallbackText =
+    String(message?.senderId || "") === String(viewerId || "")
+      ? message?.text || "[Unable to decrypt message]"
+      : "[Unable to decrypt message]";
+
   return decryptStringPayload({
     encryptedData: message.encryptedText,
     encryptionIv: message.encryptionIv,
     encryptedKeyForReceiver: message.encryptedKeyForReceiver,
     encryptedKeyForSender: message.encryptedKeyForSender,
+    encryptedKeysForReceiverDevices: message.encryptedKeysForReceiverDevices,
+    encryptedKeysForSenderDevices: message.encryptedKeysForSenderDevices,
     viewerId,
     senderId: message.senderId,
-    fallbackText: "[Unable to decrypt message]",
+    fallbackText: senderFallbackText,
   });
 };
 
@@ -152,6 +271,8 @@ export const decryptStringPayload = async ({
   encryptionIv,
   encryptedKeyForReceiver,
   encryptedKeyForSender,
+  encryptedKeysForReceiverDevices,
+  encryptedKeysForSenderDevices,
   viewerId,
   senderId,
   fallbackText = "[Encrypted message]",
@@ -165,8 +286,18 @@ export const decryptStringPayload = async ({
 
   if (!privateKeyJwk) return "[Encrypted message]";
 
+  const currentDeviceId = getLocalDeviceId();
+  const senderKeyMap = encryptedKeysForSenderDevices || {};
+  const receiverKeyMap = encryptedKeysForReceiverDevices || {};
+
+  const wrappedKeyFromMap =
+    String(senderId) === String(viewerId)
+      ? senderKeyMap?.[currentDeviceId]
+      : receiverKeyMap?.[currentDeviceId];
+
   const wrappedKeyBase64 =
-    String(senderId) === String(viewerId) ? encryptedKeyForSender : encryptedKeyForReceiver;
+    wrappedKeyFromMap ||
+    (String(senderId) === String(viewerId) ? encryptedKeyForSender : encryptedKeyForReceiver);
 
   if (!wrappedKeyBase64 || !encryptionIv) {
     return "[Encrypted message]";

@@ -27,9 +27,19 @@ const messageSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    encryptedKeysForReceiverDevices: {
+      type: Map,
+      of: String,
+      default: {},
+    },
     encryptedKeyForSender: {
       type: String,
       default: "",
+    },
+    encryptedKeysForSenderDevices: {
+      type: Map,
+      of: String,
+      default: {},
     },
     encryptionVersion: {
       type: String,
@@ -47,9 +57,19 @@ const messageSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    encryptedFileKeysForReceiverDevices: {
+      type: Map,
+      of: String,
+      default: {},
+    },
     encryptedFileKeyForSender: {
       type: String,
       default: "",
+    },
+    encryptedFileKeysForSenderDevices: {
+      type: Map,
+      of: String,
+      default: {},
     },
     fileEncryptionVersion: {
       type: String,

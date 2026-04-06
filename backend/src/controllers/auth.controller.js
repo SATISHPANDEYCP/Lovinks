@@ -273,6 +273,7 @@ export const verifyLoginOtp = async (req, res) => {
       email: user.email,
       profilePic: user.profilePic,
       encryptionPublicKey: user.encryptionPublicKey,
+      encryptionPublicKeys: user.encryptionPublicKeys || [],
       token,
     });
   } catch (error) {
@@ -621,21 +622,55 @@ export const deleteAccount = async (req, res) => {
 export const updateEncryptionPublicKey = async (req, res) => {
   try {
     const { encryptionPublicKey } = req.body;
+    const deviceId = String(req.body.deviceId || "default-device").trim();
     const userId = req.user._id;
 
     if (!encryptionPublicKey || typeof encryptionPublicKey !== "string") {
       return res.status(400).json({ message: "Valid encryption public key is required" });
     }
 
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { encryptionPublicKey },
-      { new: true }
-    ).select("_id fullName email profilePic encryptionPublicKey");
+    if (!deviceId) {
+      return res.status(400).json({ message: "Valid device id is required" });
+    }
 
-    if (!updatedUser) {
+    const existingUser = await User.findById(userId).select(
+      "_id fullName email profilePic encryptionPublicKey encryptionPublicKeys"
+    );
+
+    if (!existingUser) {
       return res.status(404).json({ message: "User not found" });
     }
+
+    const currentKeyRing = Array.isArray(existingUser.encryptionPublicKeys)
+      ? [...existingUser.encryptionPublicKeys]
+      : [];
+    const nextKeyRing = currentKeyRing.filter((item) => item?.deviceId !== deviceId);
+
+    if (existingUser.encryptionPublicKey) {
+      const hasLegacyPrimary = nextKeyRing.some((item) => item?.deviceId === "legacy-primary");
+      if (!hasLegacyPrimary) {
+        nextKeyRing.push({
+          deviceId: "legacy-primary",
+          encryptionPublicKey: existingUser.encryptionPublicKey,
+          updatedAt: new Date(),
+        });
+      }
+    }
+
+    nextKeyRing.push({
+      deviceId,
+      encryptionPublicKey,
+      updatedAt: new Date(),
+    });
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        encryptionPublicKey,
+        encryptionPublicKeys: nextKeyRing,
+      },
+      { new: true }
+    ).select("_id fullName email profilePic encryptionPublicKey encryptionPublicKeys");
 
     res.status(200).json(updatedUser);
   } catch (error) {
