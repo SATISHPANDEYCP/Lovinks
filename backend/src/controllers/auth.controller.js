@@ -71,6 +71,7 @@ export const signup = async (req, res) => {
         fullName: newUser.fullName,
         email: newUser.email,
         profilePic: newUser.profilePic,
+        encryptionPublicKey: newUser.encryptionPublicKey,
       });
     } else {
       res.status(400).json({ message: "Invalid user data" });
@@ -102,6 +103,7 @@ export const login = async (req, res) => {
       fullName: user.fullName,
       email: user.email,
       profilePic: user.profilePic,
+      encryptionPublicKey: user.encryptionPublicKey,
     });
   } catch (error) {
     console.log("Error in login controller", error.message);
@@ -173,6 +175,32 @@ export const checkAuth = (req, res) => {
     res.status(200).json(req.user);
   } catch (error) {
     console.log("Error in checkAuth controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const updateEncryptionPublicKey = async (req, res) => {
+  try {
+    const { encryptionPublicKey } = req.body;
+    const userId = req.user._id;
+
+    if (!encryptionPublicKey || typeof encryptionPublicKey !== "string") {
+      return res.status(400).json({ message: "Valid encryption public key is required" });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { encryptionPublicKey },
+      { new: true }
+    ).select("_id fullName email profilePic encryptionPublicKey");
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    console.log("Error in updateEncryptionPublicKey controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };

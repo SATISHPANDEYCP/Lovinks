@@ -58,13 +58,21 @@ const MessageInput = () => {
     const file = e.target.files[0];
     if (!file) return;
 
+    const nextFileType = file.type || "application/octet-stream";
+    const isAllowedType = nextFileType.startsWith("image/") || nextFileType === "application/pdf";
+
+    if (!isAllowedType) {
+      toast.error("Only image and PDF files are allowed");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     if (file.size > 10 * 1024 * 1024) {
       toast.error("File must be 10MB or smaller");
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
-    const nextFileType = file.type || "application/octet-stream";
     setFileName(file.name);
     setFileType(nextFileType);
 
@@ -197,7 +205,7 @@ const MessageInput = () => {
           />
           <input
             type="file"
-            accept="image/*,application/pdf,audio/*,video/*"
+            accept="image/*,application/pdf"
             className="hidden"
             ref={fileInputRef}
             onChange={handleFileChange}
@@ -205,7 +213,7 @@ const MessageInput = () => {
 
           <button
             type="button"
-            className={`hidden sm:flex btn btn-circle p-0 items-center justify-center transition-transform hover:scale-105
+            className={`btn btn-circle p-0 items-center justify-center transition-transform hover:scale-105
                      ${fileData || imagePreview ? "text-emerald-500" : "text-base-content/60"}`}
             onClick={() => fileInputRef.current?.click()}
           >

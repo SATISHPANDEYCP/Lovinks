@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { axiosInstance } from "../lib/axios.js";
 import toast from "react-hot-toast";
 import { io } from "socket.io-client";
+import { ensureLocalUserKeyPair } from "../lib/e2ee";
 
 const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "/";
 
@@ -15,11 +16,41 @@ export const useAuthStore = create((set, get) => ({
   userPresence: {},
   socket: null,
 
+  ensureE2EEKeys: async () => {
+    const { authUser } = get();
+    if (!authUser?._id) return;
+
+    try {
+      const { publicKeyJwk } = await ensureLocalUserKeyPair(authUser._id);
+      const serializedPublicKey = JSON.stringify(publicKeyJwk);
+
+      if (authUser.encryptionPublicKey === serializedPublicKey) {
+        return;
+      }
+
+      const res = await axiosInstance.put("/auth/encryption-public-key", {
+        encryptionPublicKey: serializedPublicKey,
+      });
+
+      set((state) => ({
+        authUser: state.authUser
+          ? {
+              ...state.authUser,
+              encryptionPublicKey: res.data.encryptionPublicKey,
+            }
+          : state.authUser,
+      }));
+    } catch (error) {
+      console.log("Failed to initialize E2EE keys:", error);
+    }
+  },
+
   checkAuth: async () => {
     try {
       const res = await axiosInstance.get("/auth/check");
 
       set({ authUser: res.data });
+      await get().ensureE2EEKeys();
       get().connectSocket();
     } catch (error) {
       console.log("Error in checkAuth:", error);
@@ -34,6 +65,7 @@ export const useAuthStore = create((set, get) => ({
     try {
       const res = await axiosInstance.post("/auth/signup", data);
       set({ authUser: res.data });
+      await get().ensureE2EEKeys();
       toast.success("Account created successfully");
       get().connectSocket();
     } catch (error) {
@@ -48,6 +80,7 @@ export const useAuthStore = create((set, get) => ({
     try {
       const res = await axiosInstance.post("/auth/login", data);
       set({ authUser: res.data });
+      await get().ensureE2EEKeys();
       toast.success("Logged in successfully");
 
       get().connectSocket();

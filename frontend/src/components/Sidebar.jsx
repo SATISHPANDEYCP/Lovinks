@@ -50,6 +50,8 @@ const Sidebar = () => {
           const lastMessageText = user.lastMessage?.text?.trim();
           const lastMessagePreview = lastMessageText
             ? lastMessageText
+            : user.lastMessage?.encryptedText
+              ? "Encrypted message"
             : user.lastMessage?.image
               ? "Photo"
               : null;
@@ -102,7 +104,7 @@ const Sidebar = () => {
                         : "last seen unavailable"}
                 </span>
                 {unreadCount > 0 && (
-                  <span className="ml-2 size-5 text-[0.6rem] rounded-full bg-green-500 text-black grid place-items-center flex-shrink-0">
+                  <span className="ml-2 size-[1.05rem] text-[0.6rem] rounded-full bg-green-500 text-black grid place-items-center flex-shrink-0">
                     {unreadCount > 99 ? "99+" : unreadCount}
                   </span>
                 )}

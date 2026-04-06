@@ -6,7 +6,19 @@ import MessageInput from "./MessageInput";
 import MessageSkeleton from "./skeletons/MessageSkeleton";
 import { useAuthStore } from "../store/useAuthStore";
 import { formatMessageTime } from "../lib/utils";
-import { Check, CheckCheck, ChevronDown, FileAudio, FileText, FileVideo, Loader2 } from "lucide-react";
+import {
+  Check,
+  CheckCheck,
+  ChevronDown,
+  FileAudio,
+  FileText,
+  FileVideo,
+  Lock,
+  Loader2,
+  MoreVertical,
+  Trash2,
+  X,
+} from "lucide-react";
 
 const ChatContainer = () => {
   const {
@@ -14,6 +26,7 @@ const ChatContainer = () => {
     getMessages,
     isMessagesLoading,
     markConversationAsRead,
+    deleteMessage,
     sendMessage,
     selectedUser,
     subscribeToMessages,
@@ -25,12 +38,17 @@ const ChatContainer = () => {
   const { authUser } = useAuthStore();
   const messageListRef = useRef(null);
   const messageEndRef = useRef(null);
+  const documentFrameRef = useRef(null);
   const hasInitializedScrollRef = useRef(false);
   const previousLastMessageIdRef = useRef(null);
   const [stickyUnreadStartId, setStickyUnreadStartId] = useState(null);
   const [unreadStartId, setUnreadStartId] = useState(null);
   const [unreadIncomingCount, setUnreadIncomingCount] = useState(0);
   const [hasUserScrolledUp, setHasUserScrolledUp] = useState(false);
+  const [openMenuMessageId, setOpenMenuMessageId] = useState(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState("");
+  const [previewDocument, setPreviewDocument] = useState(null);
+  const [documentPreviewProgress, setDocumentPreviewProgress] = useState(0);
 
   const isNearBottom = () => {
     const container = messageListRef.current;
@@ -119,9 +137,37 @@ const ChatContainer = () => {
     setStickyUnreadStartId(null);
     setUnreadIncomingCount(0);
     setHasUserScrolledUp(false);
+    setOpenMenuMessageId(null);
     setInitialUnreadMessageId(null);
     setActiveChatAtBottom(true);
   }, [selectedUser._id]);
+
+  useEffect(() => {
+    const closeMenuOnOutsideClick = (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      if (!target.closest("[data-message-menu-root='true']")) {
+        setOpenMenuMessageId(null);
+      }
+    };
+
+    const closeMenuOnEscape = (event) => {
+      if (event.key === "Escape") {
+        setOpenMenuMessageId(null);
+        setPreviewImageUrl("");
+        setPreviewDocument(null);
+      }
+    };
+
+    document.addEventListener("pointerdown", closeMenuOnOutsideClick);
+    document.addEventListener("keydown", closeMenuOnEscape);
+
+    return () => {
+      document.removeEventListener("pointerdown", closeMenuOnOutsideClick);
+      document.removeEventListener("keydown", closeMenuOnEscape);
+    };
+  }, []);
 
   const handleMessageScroll = () => {
     if (isNearBottom()) {
@@ -149,6 +195,81 @@ const ChatContainer = () => {
       markConversationAsRead(selectedUser._id);
     }
   };
+
+  const handleDeleteMessage = async (message, scope) => {
+    setOpenMenuMessageId(null);
+    await deleteMessage(message, scope);
+  };
+
+  const openImagePreview = (imageUrl) => {
+    if (!imageUrl) return;
+    setPreviewImageUrl(imageUrl);
+  };
+
+  const closeImagePreview = () => {
+    setPreviewImageUrl("");
+  };
+
+  const closeDocumentPreview = () => {
+    if (previewDocument?.isBlobUrl) {
+      URL.revokeObjectURL(previewDocument.url);
+    }
+    setPreviewDocument(null);
+    setDocumentPreviewProgress(0);
+  };
+
+  useEffect(() => {
+    if (!previewDocument) return;
+
+    let intervalId;
+
+    const updateProgress = () => {
+      try {
+        const frameWindow = documentFrameRef.current?.contentWindow;
+        const frameDocument = frameWindow?.document;
+        if (!frameDocument) return;
+
+        const root = frameDocument.scrollingElement || frameDocument.documentElement;
+        if (!root) return;
+
+        const maxScrollable = root.scrollHeight - root.clientHeight;
+        if (maxScrollable <= 0) {
+          setDocumentPreviewProgress(100);
+          return;
+        }
+
+        const current = Math.min(maxScrollable, Math.max(0, root.scrollTop));
+        const percent = Math.round((current / maxScrollable) * 100);
+        setDocumentPreviewProgress(percent);
+      } catch {
+        // Native browser PDF viewers may block frame access; keep progress neutral.
+        setDocumentPreviewProgress(0);
+      }
+    };
+
+    intervalId = setInterval(updateProgress, 250);
+    updateProgress();
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [previewDocument]);
+
+  useEffect(() => {
+    if (!previewImageUrl && !previewDocument) return;
+
+    const blockShortcuts = (event) => {
+      const key = String(event.key || "").toLowerCase();
+      const withCtrlOrMeta = event.ctrlKey || event.metaKey;
+
+      if (withCtrlOrMeta && (key === "s" || key === "p" || key === "u")) {
+        event.preventDefault();
+      }
+    };
+
+    document.addEventListener("keydown", blockShortcuts);
+    return () => document.removeEventListener("keydown", blockShortcuts);
+  }, [previewImageUrl, previewDocument]);
 
   const renderStatusIcon = (message) => {
     if (message.uploadFailed) {
@@ -202,15 +323,78 @@ const ChatContainer = () => {
     );
   };
 
+  const handleOpenAttachment = async (event, fileUrl, fileName, fileType) => {
+    event.preventDefault();
+    if (!fileUrl) return;
+
+    // Data URLs (used by encrypted attachments) can fail on direct navigation,
+    // so convert to Blob URL for reliable open in a new tab.
+    if (fileUrl.startsWith("data:")) {
+      try {
+        const [metaPart, base64Data] = fileUrl.split(",");
+        const mimeMatch = metaPart.match(/data:(.*?);base64/);
+        const mimeType = mimeMatch?.[1] || "application/octet-stream";
+        const binary = atob(base64Data || "");
+        const bytes = new Uint8Array(binary.length);
+
+        for (let i = 0; i < binary.length; i += 1) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+
+        const blob = new Blob([bytes], { type: mimeType });
+        const blobUrl = URL.createObjectURL(blob);
+        setPreviewDocument({
+          url: blobUrl,
+          fileName: fileName || "Attachment",
+          fileType: mimeType || fileType || "application/octet-stream",
+          isBlobUrl: true,
+        });
+        return;
+      } catch {
+        return;
+      }
+    }
+
+    try {
+      const response = await fetch(fileUrl);
+      if (!response.ok) {
+        throw new Error("Failed to fetch attachment");
+      }
+
+      const fileBlob = await response.blob();
+      const blobUrl = URL.createObjectURL(fileBlob);
+      setPreviewDocument({
+        url: blobUrl,
+        fileName: fileName || "Attachment",
+        fileType: fileBlob.type || fileType || "application/octet-stream",
+        isBlobUrl: true,
+      });
+      return;
+    } catch {
+      setPreviewDocument({
+        url: fileUrl,
+        fileName: fileName || "Attachment",
+        fileType: fileType || "application/octet-stream",
+        isBlobUrl: false,
+      });
+    }
+  };
+
   const renderAttachment = (message) => {
     if (message.image) {
       return (
-        <div className="relative mb-2">
-          <img
-            src={message.image}
-            alt="Attachment"
-            className="sm:max-w-[200px] rounded-md"
-          />
+        <div className="relative mb-2 media-content-wrap">
+          <button
+            type="button"
+            className="message-image-trigger"
+            onClick={() => openImagePreview(message.image)}
+          >
+            <img
+              src={message.image}
+              alt="Attachment"
+              className="message-image"
+            />
+          </button>
           {message.uploadFailed && (
             <button
               type="button"
@@ -227,23 +411,37 @@ const ChatContainer = () => {
     if (!message.fileUrl) {
       if (!message.fileType) return null;
 
+      const isPdf = message.fileType?.includes("pdf");
+      const attachmentLabel = message.fileType?.includes("pdf")
+        ? "PDF document"
+        : message.fileType?.startsWith("audio/")
+          ? "Audio file"
+          : message.fileType?.startsWith("video/")
+            ? "Video file"
+            : "Document";
+
       return (
-        <div className="mb-2 inline-flex items-center gap-2 rounded-md border border-base-300 px-3 py-2 text-sm">
-          {message.fileType?.startsWith("audio/") ? (
-            <FileAudio className="size-4" />
-          ) : message.fileType?.startsWith("video/") ? (
-            <FileVideo className="size-4" />
-          ) : (
-            <FileText className="size-4" />
-          )}
-          <span className="truncate max-w-[180px]">
-            {message.fileName || "Attachment"}
+        <div className="mb-2 message-document-card">
+          <span className={`message-document-icon ${isPdf ? "message-document-icon-pdf" : ""}`}>
+            {message.fileType?.startsWith("audio/") ? (
+              <FileAudio className="size-4" />
+            ) : message.fileType?.startsWith("video/") ? (
+              <FileVideo className="size-4" />
+            ) : (
+              <FileText className="size-4" />
+            )}
           </span>
+
+          <span className="message-document-meta">
+            <span className="message-document-name">{message.fileName || "Attachment"}</span>
+            <span className="message-document-type">{attachmentLabel}</span>
+          </span>
+
           {message.uploadFailed && (
             <button
               type="button"
               onClick={() => handleRetryUpload(message)}
-              className="ml-2 text-[0.6rem] text-red-400 underline"
+              className="ml-2 text-[0.65rem] text-red-400 underline"
             >
               Retry
             </button>
@@ -254,11 +452,17 @@ const ChatContainer = () => {
 
     if (message.fileType?.startsWith("image/")) {
       return (
-        <img
-          src={message.fileUrl}
-          alt={message.fileName || "Attachment"}
-          className="sm:max-w-[200px] rounded-md mb-2"
-        />
+        <button
+          type="button"
+          className="message-image-trigger mb-2"
+          onClick={() => openImagePreview(message.fileUrl)}
+        >
+          <img
+            src={message.fileUrl}
+            alt={message.fileName || "Attachment"}
+            className="message-image"
+          />
+        </button>
       );
     }
 
@@ -270,20 +474,39 @@ const ChatContainer = () => {
       return <video controls src={message.fileUrl} className="mb-2 w-full rounded-md" />;
     }
 
+    const attachmentLabel = message.fileType?.includes("pdf")
+      ? "PDF document"
+      : message.fileType?.startsWith("audio/")
+        ? "Audio file"
+        : message.fileType?.startsWith("video/")
+          ? "Video file"
+          : "Document";
+
+    const isPdf = message.fileType?.includes("pdf");
+
     return (
       <a
         href={message.fileUrl}
         target="_blank"
         rel="noreferrer"
-        className="mb-2 inline-flex items-center gap-2 rounded-md border border-base-300 px-3 py-2 text-sm"
+        className="mb-2 message-document-card message-document-link"
+        onClick={(event) =>
+          handleOpenAttachment(event, message.fileUrl, message.fileName, message.fileType)
+        }
       >
-        {message.fileType?.includes("pdf") ? (
-          <FileText className="size-4" />
-        ) : (
-          <FileText className="size-4" />
-        )}
-        <span className="truncate max-w-[180px]">
-          {message.fileName || "Attachment"}
+        <span className={`message-document-icon ${isPdf ? "message-document-icon-pdf" : ""}`}>
+          {message.fileType?.startsWith("audio/") ? (
+            <FileAudio className="size-4" />
+          ) : message.fileType?.startsWith("video/") ? (
+            <FileVideo className="size-4" />
+          ) : (
+            <FileText className="size-4" />
+          )}
+        </span>
+
+        <span className="message-document-meta">
+          <span className="message-document-name">{message.fileName || "Attachment"}</span>
+          <span className="message-document-type">{attachmentLabel}</span>
         </span>
       </a>
     );
@@ -307,8 +530,16 @@ const ChatContainer = () => {
         <div
           ref={messageListRef}
           onScroll={handleMessageScroll}
-          className="h-full overflow-y-auto p-4 space-y-4"
+          className="h-full overflow-y-auto overflow-x-hidden p-4 space-y-4"
         >
+          <div className="e2ee-watermark" role="note" aria-label="End-to-end encryption notice">
+            <Lock size={12} />
+            <p>
+              Messages and calls are end-to-end encrypted. No one outside of this chat, not even
+              Lovinks, can read or listen to them.
+            </p>
+          </div>
+
           {messages.map((message) => (
             <div key={message._id}>
               {(unreadStartId === message._id || stickyUnreadStartId === message._id) && (
@@ -322,14 +553,79 @@ const ChatContainer = () => {
                   message.senderId === authUser._id ? "chat-end" : "chat-start"
                 }`}
               >
-                <div className={`chat-bubble flex flex-col ${message.text ? "has-text-content" : ""}`}>
-                  {renderAttachment(message)}
-                  {message.text && <p className="message-text">{message.text}</p>}
+                <div className="message-bubble-wrap" data-message-menu-root="true">
+                  <div
+                    className={`chat-bubble flex flex-col ${message.text ? "has-text-content" : ""} ${
+                      message.image && !message.text ? "has-media-only" : ""
+                    }`}
+                  >
+                    {!message.isUploading && (
+                      <button
+                        type="button"
+                        aria-label="Message options"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setOpenMenuMessageId((currentId) =>
+                            currentId === message._id ? null : message._id
+                          );
+                        }}
+                        className={`message-options-trigger ${
+                          openMenuMessageId === message._id ? "is-open" : ""
+                        }`}
+                      >
+                        <MoreVertical size={12} />
+                      </button>
+                    )}
 
-                  <div className={`message-meta ${message.text ? "floating-meta" : ""}`}>
-                    <time className="text-[11px] opacity-70">{formatMessageTime(message.createdAt)}</time>
-                    {message.senderId === authUser._id && renderStatusIcon(message)}
+                    {renderAttachment(message)}
+                    {message.text && <p className="message-text">{message.text}</p>}
+
+                    <div className={`message-meta ${message.text ? "floating-meta" : ""}`}>
+                      <time className="text-[11px] opacity-70">{formatMessageTime(message.createdAt)}</time>
+                      {message.senderId === authUser._id && renderStatusIcon(message)}
+                    </div>
                   </div>
+
+                  {openMenuMessageId === message._id && (
+                    <div
+                      className={`message-options-menu ${
+                        message.senderId === authUser._id
+                          ? "message-options-menu-end"
+                          : "message-options-menu-start"
+                      }`}
+                      role="menu"
+                    >
+                      <button
+                        type="button"
+                        aria-label="Close menu"
+                        className="message-options-close"
+                        onClick={() => setOpenMenuMessageId(null)}
+                      >
+                        <X size={10} />
+                      </button>
+
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="message-options-item"
+                        onClick={() => handleDeleteMessage(message, "me")}
+                      >
+                        <Trash2 size={12} />
+                        Delete for me
+                      </button>
+                      {message.senderId === authUser._id && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="message-options-item message-options-item-danger"
+                          onClick={() => handleDeleteMessage(message, "everyone")}
+                        >
+                          <Trash2 size={12} />
+                          Delete for everyone
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -349,6 +645,82 @@ const ChatContainer = () => {
           </button>
         )}
       </div>
+
+      {previewImageUrl && (
+        <div className="image-preview-overlay" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            className="image-preview-backdrop"
+            aria-label="Close image preview"
+            onClick={closeImagePreview}
+          />
+
+          <div className="image-preview-content">
+            <button
+              type="button"
+              className="image-preview-close"
+              aria-label="Close preview"
+              onClick={closeImagePreview}
+            >
+              <X size={16} />
+            </button>
+
+            <img src={previewImageUrl} alt="Preview" className="image-preview-media" />
+          </div>
+        </div>
+      )}
+
+      {previewDocument && (
+        <div className="image-preview-overlay" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            className="image-preview-backdrop"
+            aria-label="Close document preview"
+            onClick={closeDocumentPreview}
+          />
+
+          <div className="document-preview-content" onContextMenu={(event) => event.preventDefault()}>
+            <button
+              type="button"
+              className="image-preview-close"
+              aria-label="Close preview"
+              onClick={closeDocumentPreview}
+            >
+              <X size={16} />
+            </button>
+
+            <div className="document-preview-header">
+              <span className="document-preview-name">{previewDocument.fileName}</span>
+              <span className="document-preview-lock">Protected preview</span>
+            </div>
+
+            <div className="document-preview-progress-track" aria-hidden="true">
+              <span
+                className="document-preview-progress-fill"
+                style={{ width: `${documentPreviewProgress}%` }}
+              />
+            </div>
+
+            {(() => {
+              const isPdf =
+                previewDocument.fileType?.includes("pdf") ||
+                /\.pdf$/i.test(previewDocument.fileName || "");
+              const frameSrc = isPdf
+                ? `${previewDocument.url}#toolbar=0&navpanes=0&scrollbar=0&statusbar=0&messages=0&view=FitH`
+                : previewDocument.url;
+
+              return (
+                <iframe
+                  ref={documentFrameRef}
+                  title={previewDocument.fileName}
+                  src={frameSrc}
+                  className="document-preview-frame"
+                />
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       <MessageInput />
     </div>

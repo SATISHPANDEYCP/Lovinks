@@ -6,6 +6,7 @@ import { getReceiverSocketId, io } from "../lib/socket.js";
 
 const APP_ASSET_FOLDER = "lovinks";
 const MAX_MESSAGE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_TYPES = ["application/pdf"];
 
 const getBase64SizeInBytes = (base64String) => {
   const base64Data = base64String.includes(",") ? base64String.split(",")[1] : base64String;
@@ -23,19 +24,27 @@ export const getUsersForSidebar = async (req, res) => {
     const usersWithLastMessage = await Promise.all(
       filteredUsers.map(async (user) => {
         const lastMessage = await Message.findOne({
-          $or: [
-            { senderId: loggedInUserId, receiverId: user._id },
-            { senderId: user._id, receiverId: loggedInUserId },
+          $and: [
+            {
+              $or: [
+                { senderId: loggedInUserId, receiverId: user._id },
+                { senderId: user._id, receiverId: loggedInUserId },
+              ],
+            },
+            { deletedFor: { $nin: [loggedInUserId] } },
           ],
         })
           .sort({ createdAt: -1 })
-          .select("text image createdAt senderId receiverId")
+          .select(
+            "text encryptedText encryptionIv encryptedKeyForReceiver encryptedKeyForSender image createdAt senderId receiverId"
+          )
           .lean();
 
         const unreadCount = await Message.countDocuments({
           senderId: user._id,
           receiverId: loggedInUserId,
           status: { $ne: "read" },
+          deletedFor: { $nin: [loggedInUserId] },
         });
 
         return {
@@ -63,6 +72,7 @@ export const getMessages = async (req, res) => {
       senderId: userToChatId,
       receiverId: myId,
       status: { $ne: "read" },
+      deletedFor: { $nin: [myId] },
     })
       .sort({ createdAt: 1 })
       .select("_id");
@@ -95,9 +105,14 @@ export const getMessages = async (req, res) => {
     }
 
     const messages = await Message.find({
-      $or: [
-        { senderId: myId, receiverId: userToChatId },
-        { senderId: userToChatId, receiverId: myId },
+      $and: [
+        {
+          $or: [
+            { senderId: myId, receiverId: userToChatId },
+            { senderId: userToChatId, receiverId: myId },
+          ],
+        },
+        { deletedFor: { $nin: [myId] } },
       ],
     });
 
@@ -113,7 +128,23 @@ export const getMessages = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
   try {
-    const { text, image, file, fileName, fileType } = req.body;
+    const {
+      text,
+      image,
+      file,
+      fileName,
+      fileType,
+      encryptedText,
+      encryptionIv,
+      encryptedKeyForReceiver,
+      encryptedKeyForSender,
+      encryptionVersion,
+      encryptedFileData,
+      fileEncryptionIv,
+      encryptedFileKeyForReceiver,
+      encryptedFileKeyForSender,
+      fileEncryptionVersion,
+    } = req.body;
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
 
@@ -128,13 +159,21 @@ export const sendMessage = async (req, res) => {
         return res.status(400).json({ message: "File must be 10MB or smaller" });
       }
 
+      const normalizedFileType = typeof fileType === "string" ? fileType : "";
+      const isAllowedAttachment =
+        normalizedFileType.startsWith("image/") || ALLOWED_ATTACHMENT_TYPES.includes(normalizedFileType);
+
+      if (!isAllowedAttachment) {
+        return res.status(400).json({ message: "Only image and PDF files are allowed" });
+      }
+
       const uploadResponse = await cloudinary.uploader.upload(file, {
         folder: APP_ASSET_FOLDER,
         public_id: `message-${senderId}-${Date.now()}`,
         resource_type: "auto",
       });
       fileUrl = uploadResponse.secure_url;
-      resolvedFileType = typeof fileType === "string" ? fileType : "";
+      resolvedFileType = normalizedFileType;
       resolvedFileName = typeof fileName === "string" ? fileName : "";
 
       if (resolvedFileType.startsWith("image/")) {
@@ -163,11 +202,26 @@ export const sendMessage = async (req, res) => {
     const newMessage = new Message({
       senderId,
       receiverId,
-      text,
+      text: encryptedText ? "" : text,
+      encryptedText: typeof encryptedText === "string" ? encryptedText : "",
+      encryptionIv: typeof encryptionIv === "string" ? encryptionIv : "",
+      encryptedKeyForReceiver: typeof encryptedKeyForReceiver === "string" ? encryptedKeyForReceiver : "",
+      encryptedKeyForSender: typeof encryptedKeyForSender === "string" ? encryptedKeyForSender : "",
+      encryptionVersion: typeof encryptionVersion === "string" ? encryptionVersion : "",
+      encryptedFileData: typeof encryptedFileData === "string" ? encryptedFileData : "",
+      fileEncryptionIv: typeof fileEncryptionIv === "string" ? fileEncryptionIv : "",
+      encryptedFileKeyForReceiver:
+        typeof encryptedFileKeyForReceiver === "string" ? encryptedFileKeyForReceiver : "",
+      encryptedFileKeyForSender:
+        typeof encryptedFileKeyForSender === "string" ? encryptedFileKeyForSender : "",
+      fileEncryptionVersion: typeof fileEncryptionVersion === "string" ? fileEncryptionVersion : "",
       image: imageUrl,
       fileUrl,
-      fileType: resolvedFileType,
-      fileName: resolvedFileName,
+      fileType:
+        resolvedFileType ||
+        (typeof fileType === "string" ? fileType : "") ||
+        (typeof encryptedFileData === "string" && encryptedFileData ? "application/octet-stream" : ""),
+      fileName: resolvedFileName || (typeof fileName === "string" ? fileName : ""),
       status: isDelivered ? "delivered" : "sent",
       deliveredAt: isDelivered ? new Date() : null,
     });
@@ -181,6 +235,85 @@ export const sendMessage = async (req, res) => {
     res.status(201).json(newMessage);
   } catch (error) {
     console.log("Error in sendMessage controller: ", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const deleteMessage = async (req, res) => {
+  try {
+    const { id: messageId } = req.params;
+    const requesterId = req.user._id;
+    const { scope = "everyone" } = req.body;
+
+    const message = await Message.findById(messageId);
+
+    if (!message) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+
+    const isParticipant =
+      message.senderId.toString() === requesterId.toString() ||
+      message.receiverId.toString() === requesterId.toString();
+
+    if (!isParticipant) {
+      return res.status(403).json({ message: "You are not allowed to delete this message" });
+    }
+
+    if (scope === "me") {
+      await Message.updateOne(
+        { _id: messageId },
+        {
+          $addToSet: {
+            deletedFor: requesterId,
+          },
+        }
+      );
+
+      const updatedMessage = await Message.findById(messageId).select("deletedFor senderId receiverId");
+      if (updatedMessage) {
+        const participantIds = [
+          updatedMessage.senderId.toString(),
+          updatedMessage.receiverId.toString(),
+        ];
+        const deletedForSet = new Set(updatedMessage.deletedFor.map((id) => id.toString()));
+        const isDeletedForBoth = participantIds.every((id) => deletedForSet.has(id));
+
+        if (isDeletedForBoth) {
+          await Message.deleteOne({ _id: messageId });
+        }
+      }
+
+      return res.status(200).json({
+        message: "Message deleted for you",
+        messageId: message._id.toString(),
+        scope: "me",
+      });
+    }
+
+    if (scope !== "everyone") {
+      return res.status(400).json({ message: "Invalid delete scope" });
+    }
+
+    if (message.senderId.toString() !== requesterId.toString()) {
+      return res.status(403).json({ message: "Only sender can delete for everyone" });
+    }
+
+    await Message.deleteOne({ _id: messageId });
+
+    const receiverSocketId = getReceiverSocketId(message.receiverId.toString());
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("messageDeleted", {
+        messageId: message._id.toString(),
+      });
+    }
+
+    res.status(200).json({
+      message: "Message deleted successfully",
+      messageId: message._id.toString(),
+      scope: "everyone",
+    });
+  } catch (error) {
+    console.log("Error in deleteMessage controller: ", error.message);
     res.status(500).json({ error: "Internal server error" });
   }
 };

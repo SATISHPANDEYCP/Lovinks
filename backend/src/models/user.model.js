@@ -24,6 +24,10 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    encryptionPublicKey: {
+      type: String,
+      default: "",
+    },
   },
   { timestamps: true }
 );

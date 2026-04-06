@@ -15,6 +15,46 @@ const messageSchema = new mongoose.Schema(
     text: {
       type: String,
     },
+    encryptedText: {
+      type: String,
+      default: "",
+    },
+    encryptionIv: {
+      type: String,
+      default: "",
+    },
+    encryptedKeyForReceiver: {
+      type: String,
+      default: "",
+    },
+    encryptedKeyForSender: {
+      type: String,
+      default: "",
+    },
+    encryptionVersion: {
+      type: String,
+      default: "",
+    },
+    encryptedFileData: {
+      type: String,
+      default: "",
+    },
+    fileEncryptionIv: {
+      type: String,
+      default: "",
+    },
+    encryptedFileKeyForReceiver: {
+      type: String,
+      default: "",
+    },
+    encryptedFileKeyForSender: {
+      type: String,
+      default: "",
+    },
+    fileEncryptionVersion: {
+      type: String,
+      default: "",
+    },
     image: {
       type: String,
     },
@@ -43,6 +83,12 @@ const messageSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    deletedFor: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   { timestamps: true }
 );
