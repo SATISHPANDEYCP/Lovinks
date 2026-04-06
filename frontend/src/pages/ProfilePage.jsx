@@ -6,8 +6,11 @@ import toast from "react-hot-toast";
 const MAX_PROFILE_PIC_SIZE_BYTES = 5 * 1024 * 1024;
 
 const ProfilePage = () => {
-  const { authUser, isUpdatingProfile, updateProfile } = useAuthStore();
+  const { authUser, isUpdatingProfile, isDeletingAccount, updateProfile, deleteAccount } =
+    useAuthStore();
   const [selectedImg, setSelectedImg] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
 
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
@@ -28,6 +31,28 @@ const ProfilePage = () => {
       setSelectedImg(base64Image);
       await updateProfile({ profilePic: base64Image });
     };
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!deletePassword.trim()) {
+      toast.error("Password is required to delete account");
+      return;
+    }
+
+    await deleteAccount(deletePassword);
+    setDeletePassword("");
+    setShowDeleteModal(false);
+  };
+
+  const openDeleteModal = () => {
+    setDeletePassword("");
+    setShowDeleteModal(true);
+  };
+
+  const closeDeleteModal = () => {
+    if (isDeletingAccount) return;
+    setDeletePassword("");
+    setShowDeleteModal(false);
   };
 
   return (
@@ -105,8 +130,74 @@ const ProfilePage = () => {
               </div>
             </div>
           </div>
+
+          <div className="rounded-lg border border-red-500/35 p-3 bg-red-500/5">
+            <h2 className="text-sm font-medium text-red-400">Danger Zone</h2>
+            <p className="mt-1 text-xs sm:text-sm text-base-content/75">
+              Deleting your account will permanently remove your profile, chats, and uploaded media.
+            </p>
+            <button
+              type="button"
+              onClick={openDeleteModal}
+              disabled={isDeletingAccount}
+              className="btn btn-sm mt-3 border-red-500/45 text-red-400 hover:bg-red-500/10"
+            >
+              {isDeletingAccount ? "Deleting..." : "Delete Account Permanently"}
+            </button>
+          </div>
         </div>
       </div>
+
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close delete account dialog"
+            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+            onClick={closeDeleteModal}
+          />
+
+          <div className="relative w-full max-w-md rounded-xl border border-red-500/35 bg-base-100 p-5 shadow-2xl">
+            <h3 className="text-lg font-semibold text-red-400">Delete Account</h3>
+            <p className="mt-2 text-sm text-base-content/75">
+              This action is permanent. Your profile, chats, and media will be deleted forever.
+            </p>
+
+            <div className="mt-4">
+              <label className="label">
+                <span className="label-text font-medium">Confirm your password</span>
+              </label>
+              <input
+                type="password"
+                className="input input-bordered w-full"
+                placeholder="Enter password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                autoFocus
+              />
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={closeDeleteModal}
+                disabled={isDeletingAccount}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm border-red-500/45 text-red-400 hover:bg-red-500/10"
+                onClick={handleDeleteAccount}
+                disabled={isDeletingAccount}
+              >
+                {isDeletingAccount ? "Deleting..." : "Delete Permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

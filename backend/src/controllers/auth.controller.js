@@ -1,10 +1,26 @@
 import { generateToken } from "../lib/utils.js";
 import User from "../models/user.model.js";
+import Message from "../models/message.model.js";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import cloudinary from "../lib/cloudinary.js";
+import { sendLoginOtpEmail } from "../lib/gmail.js";
 
 const MAX_PROFILE_PIC_SIZE_BYTES = 5 * 1024 * 1024;
 const APP_ASSET_FOLDER = "lovinks";
+const OTP_VALIDITY_MS = 5 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+
+const hashValue = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
+
+const generateOtpCode = () => String(crypto.randomInt(100000, 999999));
+
+const clearLoginOtpState = {
+  loginOtpHash: "",
+  loginOtpExpiresAt: null,
+  loginOtpSessionHash: "",
+  loginOtpAttempts: 0,
+};
 
 const getBase64SizeInBytes = (base64String) => {
   const base64Data = base64String.includes(",") ? base64String.split(",")[1] : base64String;
@@ -50,32 +66,48 @@ export const signup = async (req, res) => {
 
     const user = await User.findOne({ email });
 
-    if (user) return res.status(400).json({ message: "Email already exists" });
+    if (user?.isEmailVerified) return res.status(400).json({ message: "Email already exists" });
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
+    const otp = generateOtpCode();
+    const otpSessionToken = crypto.randomBytes(32).toString("hex");
 
-    const newUser = new User({
-      fullName,
-      email,
-      password: hashedPassword,
-    });
+    let newUser = user;
 
-    if (newUser) {
-      // generate jwt token here
-      generateToken(newUser._id, res);
-      await newUser.save();
-
-      res.status(201).json({
-        _id: newUser._id,
-        fullName: newUser.fullName,
-        email: newUser.email,
-        profilePic: newUser.profilePic,
-        encryptionPublicKey: newUser.encryptionPublicKey,
+    if (!newUser) {
+      newUser = new User({
+        fullName,
+        email,
+        password: hashedPassword,
+        isEmailVerified: false,
       });
     } else {
-      res.status(400).json({ message: "Invalid user data" });
+      newUser.fullName = fullName;
+      newUser.password = hashedPassword;
+      newUser.isEmailVerified = false;
     }
+
+    newUser.loginOtpHash = hashValue(otp);
+    newUser.loginOtpSessionHash = hashValue(otpSessionToken);
+    newUser.loginOtpExpiresAt = new Date(Date.now() + OTP_VALIDITY_MS);
+    newUser.loginOtpAttempts = 0;
+
+    await newUser.save();
+
+    try {
+      await sendLoginOtpEmail({ to: newUser.email, otp });
+    } catch (error) {
+      await User.findByIdAndUpdate(newUser._id, { $set: clearLoginOtpState });
+      return res.status(500).json({ message: "Failed to send OTP email" });
+    }
+
+    res.status(201).json({
+      requiresOtp: true,
+      email: newUser.email,
+      otpSessionToken,
+      message: "OTP sent to your email",
+    });
   } catch (error) {
     console.log("Error in signup controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
@@ -96,6 +128,111 @@ export const login = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
+    if (!user.isEmailVerified) {
+      const otp = generateOtpCode();
+      const otpSessionToken = crypto.randomBytes(32).toString("hex");
+
+      user.loginOtpHash = hashValue(otp);
+      user.loginOtpSessionHash = hashValue(otpSessionToken);
+      user.loginOtpExpiresAt = new Date(Date.now() + OTP_VALIDITY_MS);
+      user.loginOtpAttempts = 0;
+      await user.save();
+
+      try {
+        await sendLoginOtpEmail({ to: user.email, otp });
+      } catch (error) {
+        await User.findByIdAndUpdate(user._id, { $set: clearLoginOtpState });
+        return res.status(500).json({ message: "Failed to send OTP email" });
+      }
+
+      return res.status(200).json({
+        requiresOtp: true,
+        email: user.email,
+        otpSessionToken,
+        message: "Email verification OTP sent",
+      });
+    }
+
+    const otp = generateOtpCode();
+    const otpSessionToken = crypto.randomBytes(32).toString("hex");
+
+    user.loginOtpHash = hashValue(otp);
+    user.loginOtpSessionHash = hashValue(otpSessionToken);
+    user.loginOtpExpiresAt = new Date(Date.now() + OTP_VALIDITY_MS);
+    user.loginOtpAttempts = 0;
+
+    await user.save();
+
+    try {
+      await sendLoginOtpEmail({ to: user.email, otp });
+    } catch (error) {
+      await User.findByIdAndUpdate(user._id, { $set: clearLoginOtpState });
+      return res.status(500).json({ message: "Failed to send OTP email" });
+    }
+
+    res.status(200).json({
+      requiresOtp: true,
+      email: user.email,
+      otpSessionToken,
+      message: "OTP sent to your email",
+    });
+  } catch (error) {
+    console.log("Error in login controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const verifyLoginOtp = async (req, res) => {
+  const { email, otp, otpSessionToken } = req.body;
+
+  try {
+    if (!email || !otp || !otpSessionToken) {
+      return res.status(400).json({ message: "Email, OTP and session token are required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid verification request" });
+    }
+
+    if (!user.loginOtpHash || !user.loginOtpSessionHash || !user.loginOtpExpiresAt) {
+      return res.status(400).json({ message: "No active OTP request found" });
+    }
+
+    if (user.loginOtpExpiresAt.getTime() < Date.now()) {
+      await User.findByIdAndUpdate(user._id, { $set: clearLoginOtpState });
+      return res.status(400).json({ message: "OTP expired. Please login again." });
+    }
+
+    if (user.loginOtpAttempts >= OTP_MAX_ATTEMPTS) {
+      await User.findByIdAndUpdate(user._id, { $set: clearLoginOtpState });
+      return res.status(429).json({ message: "Too many invalid attempts. Please login again." });
+    }
+
+    const isSessionValid = hashValue(otpSessionToken) === user.loginOtpSessionHash;
+    const isOtpValid = hashValue(otp) === user.loginOtpHash;
+
+    if (!isSessionValid || !isOtpValid) {
+      user.loginOtpAttempts += 1;
+
+      if (user.loginOtpAttempts >= OTP_MAX_ATTEMPTS) {
+        user.loginOtpHash = "";
+        user.loginOtpSessionHash = "";
+        user.loginOtpExpiresAt = null;
+        user.loginOtpAttempts = 0;
+      }
+
+      await user.save();
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    user.loginOtpHash = "";
+    user.loginOtpSessionHash = "";
+    user.loginOtpExpiresAt = null;
+    user.loginOtpAttempts = 0;
+    user.isEmailVerified = true;
+    await user.save();
+
     generateToken(user._id, res);
 
     res.status(200).json({
@@ -106,7 +243,43 @@ export const login = async (req, res) => {
       encryptionPublicKey: user.encryptionPublicKey,
     });
   } catch (error) {
-    console.log("Error in login controller", error.message);
+    console.log("Error in verifyLoginOtp controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const resendLoginOtp = async (req, res) => {
+  const { email, otpSessionToken } = req.body;
+
+  try {
+    if (!email || !otpSessionToken) {
+      return res.status(400).json({ message: "Email and session token are required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid resend request" });
+    }
+
+    if (!user.loginOtpSessionHash || hashValue(otpSessionToken) !== user.loginOtpSessionHash) {
+      return res.status(400).json({ message: "Session expired. Please login again." });
+    }
+
+    const otp = generateOtpCode();
+    user.loginOtpHash = hashValue(otp);
+    user.loginOtpExpiresAt = new Date(Date.now() + OTP_VALIDITY_MS);
+    user.loginOtpAttempts = 0;
+    await user.save();
+
+    try {
+      await sendLoginOtpEmail({ to: user.email, otp });
+    } catch (error) {
+      return res.status(500).json({ message: "Failed to resend OTP email" });
+    }
+
+    res.status(200).json({ message: "OTP resent to your email" });
+  } catch (error) {
+    console.log("Error in resendLoginOtp controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -175,6 +348,85 @@ export const checkAuth = (req, res) => {
     res.status(200).json(req.user);
   } catch (error) {
     console.log("Error in checkAuth controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const destroyCloudinaryAssetByPublicId = async (publicId) => {
+  // Message uploads can be image/video/raw depending on file type.
+  const resourceTypes = ["image", "video", "raw"];
+
+  for (const resourceType of resourceTypes) {
+    try {
+      await cloudinary.uploader.destroy(publicId, {
+        resource_type: resourceType,
+        invalidate: true,
+      });
+      return;
+    } catch (error) {
+      // Try next resource type.
+    }
+  }
+};
+
+export const deleteAccount = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { password } = req.body;
+
+    if (!password || typeof password !== "string") {
+      return res.status(400).json({ message: "Password is required to delete account" });
+    }
+
+    const existingUser = await User.findById(userId).select("profilePic password");
+    if (!existingUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const isPasswordCorrect = await bcrypt.compare(password, existingUser.password);
+    if (!isPasswordCorrect) {
+      return res.status(401).json({ message: "Invalid password" });
+    }
+
+    const relatedMessages = await Message.find({
+      $or: [{ senderId: userId }, { receiverId: userId }],
+    }).select("image fileUrl");
+
+    const publicIdsToDelete = new Set();
+
+    const addPublicIdFromUrl = (url) => {
+      const publicId = getCloudinaryPublicIdFromUrl(url);
+      if (publicId) {
+        publicIdsToDelete.add(publicId);
+      }
+    };
+
+    addPublicIdFromUrl(existingUser.profilePic);
+    relatedMessages.forEach((message) => {
+      addPublicIdFromUrl(message.image);
+      addPublicIdFromUrl(message.fileUrl);
+    });
+
+    await Promise.all(
+      Array.from(publicIdsToDelete).map(async (publicId) => {
+        try {
+          await destroyCloudinaryAssetByPublicId(publicId);
+        } catch (error) {
+          console.log("Failed to delete cloud asset during account removal:", error.message);
+        }
+      })
+    );
+
+    await Message.deleteMany({
+      $or: [{ senderId: userId }, { receiverId: userId }],
+    });
+
+    await User.findByIdAndDelete(userId);
+
+    res.cookie("jwt", "", { maxAge: 0 });
+    res.status(200).json({ message: "Account deleted successfully" });
+  } catch (error) {
+    console.log("Error in deleteAccount controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };

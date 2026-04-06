@@ -10,8 +10,13 @@ export const useAuthStore = create((set, get) => ({
   authUser: null,
   isSigningUp: false,
   isLoggingIn: false,
+  isVerifyingLoginOtp: false,
+  isResendingLoginOtp: false,
   isUpdatingProfile: false,
+  isDeletingAccount: false,
   isCheckingAuth: true,
+  pendingLoginOtpEmail: "",
+  pendingLoginOtpSessionToken: "",
   onlineUsers: [],
   userPresence: {},
   socket: null,
@@ -64,12 +69,22 @@ export const useAuthStore = create((set, get) => ({
     set({ isSigningUp: true });
     try {
       const res = await axiosInstance.post("/auth/signup", data);
+
+      if (res.data?.requiresOtp) {
+        set({
+          pendingLoginOtpEmail: res.data.email,
+          pendingLoginOtpSessionToken: res.data.otpSessionToken,
+        });
+        toast.success("OTP sent to your email");
+        return;
+      }
+
       set({ authUser: res.data });
       await get().ensureE2EEKeys();
       toast.success("Account created successfully");
       get().connectSocket();
     } catch (error) {
-      toast.error(error.response.data.message);
+      toast.error(error.response?.data?.message || "Signup failed");
     } finally {
       set({ isSigningUp: false });
     }
@@ -79,26 +94,120 @@ export const useAuthStore = create((set, get) => ({
     set({ isLoggingIn: true });
     try {
       const res = await axiosInstance.post("/auth/login", data);
-      set({ authUser: res.data });
+
+      if (res.data?.requiresOtp) {
+        set({
+          pendingLoginOtpEmail: res.data.email,
+          pendingLoginOtpSessionToken: res.data.otpSessionToken,
+        });
+        toast.success("OTP sent to your email");
+        return;
+      }
+
+      set({
+        authUser: res.data,
+        pendingLoginOtpEmail: "",
+        pendingLoginOtpSessionToken: "",
+      });
       await get().ensureE2EEKeys();
       toast.success("Logged in successfully");
-
       get().connectSocket();
     } catch (error) {
-      toast.error(error.response.data.message);
+      toast.error(error.response?.data?.message || "Login failed");
     } finally {
       set({ isLoggingIn: false });
     }
   },
 
+  verifyLoginOtp: async (otp) => {
+    const { pendingLoginOtpEmail, pendingLoginOtpSessionToken } = get();
+    if (!pendingLoginOtpEmail || !pendingLoginOtpSessionToken) {
+      toast.error("OTP session expired. Please login again.");
+      return;
+    }
+
+    set({ isVerifyingLoginOtp: true });
+    try {
+      const res = await axiosInstance.post("/auth/verify-login-otp", {
+        email: pendingLoginOtpEmail,
+        otp,
+        otpSessionToken: pendingLoginOtpSessionToken,
+      });
+
+      set({
+        authUser: res.data,
+        pendingLoginOtpEmail: "",
+        pendingLoginOtpSessionToken: "",
+      });
+      await get().ensureE2EEKeys();
+      toast.success("Logged in successfully");
+      get().connectSocket();
+    } catch (error) {
+      toast.error(error.response?.data?.message || "OTP verification failed");
+    } finally {
+      set({ isVerifyingLoginOtp: false });
+    }
+  },
+
+  resendLoginOtp: async () => {
+    const { pendingLoginOtpEmail, pendingLoginOtpSessionToken } = get();
+    if (!pendingLoginOtpEmail || !pendingLoginOtpSessionToken) {
+      toast.error("OTP session expired. Please login again.");
+      return;
+    }
+
+    set({ isResendingLoginOtp: true });
+    try {
+      await axiosInstance.post("/auth/resend-login-otp", {
+        email: pendingLoginOtpEmail,
+        otpSessionToken: pendingLoginOtpSessionToken,
+      });
+      toast.success("OTP resent to your email");
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to resend OTP");
+    } finally {
+      set({ isResendingLoginOtp: false });
+    }
+  },
+
+  cancelLoginOtpFlow: () =>
+    set({
+      pendingLoginOtpEmail: "",
+      pendingLoginOtpSessionToken: "",
+      isVerifyingLoginOtp: false,
+      isResendingLoginOtp: false,
+    }),
+
   logout: async () => {
     try {
       await axiosInstance.post("/auth/logout");
-      set({ authUser: null });
+      set({ authUser: null, pendingLoginOtpEmail: "", pendingLoginOtpSessionToken: "" });
       toast.success("Logged out successfully");
       get().disconnectSocket();
     } catch (error) {
       toast.error(error.response.data.message);
+    }
+  },
+
+  deleteAccount: async (password) => {
+    set({ isDeletingAccount: true });
+    try {
+      await axiosInstance.delete("/auth/delete-account", {
+        data: { password },
+      });
+      set({
+        authUser: null,
+        onlineUsers: [],
+        userPresence: {},
+        pendingLoginOtpEmail: "",
+        pendingLoginOtpSessionToken: "",
+      });
+      get().disconnectSocket();
+      toast.success("Account deleted successfully");
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to delete account");
+    } finally {
+      set({ isDeletingAccount: false });
     }
   },
 
