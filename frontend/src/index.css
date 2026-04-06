@@ -280,6 +280,12 @@
 		padding-bottom: 0.95rem;
 	}
 
+	.message-text {
+		white-space: pre-wrap;
+		overflow-wrap: break-word;
+		word-break: break-word;
+	}
+
 	.chat.chat-start .chat-bubble {
 		background: linear-gradient(
 			160deg,

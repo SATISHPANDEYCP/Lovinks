@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
-import { Image, Send, X } from "lucide-react";
+import { FileAudio, FileText, FileVideo, Loader2, Paperclip, Send, X } from "lucide-react";
 import toast from "react-hot-toast";
 
 const MessageInput = () => {
   const [text, setText] = useState("");
+  const [fileData, setFileData] = useState(null);
+  const [fileName, setFileName] = useState("");
+  const [fileType, setFileType] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const fileInputRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const isTypingRef = useRef(false);
@@ -49,58 +54,125 @@ const MessageInput = () => {
     }, 1200);
   };
 
-  const handleImageChange = (e) => {
+  const handleFileChange = (e) => {
     const file = e.target.files[0];
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select an image file");
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("File must be 10MB or smaller");
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
+    const nextFileType = file.type || "application/octet-stream";
+    setFileName(file.name);
+    setFileType(nextFileType);
+
     const reader = new FileReader();
     reader.onloadend = () => {
-      setImagePreview(reader.result);
+      setFileData(reader.result);
+      if (nextFileType.startsWith("image/")) {
+        setImagePreview(reader.result);
+      } else {
+        setImagePreview(null);
+      }
     };
     reader.readAsDataURL(file);
   };
 
-  const removeImage = () => {
+  const removeFile = () => {
+    setFileData(null);
+    setFileName("");
+    setFileType("");
     setImagePreview(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!text.trim() && !imagePreview) return;
+    if (isSending) return;
+    const trimmedText = text.trim();
+    const hasAttachment = Boolean(fileData || imagePreview);
+    if (!trimmedText && !hasAttachment) return;
+
+    const tempId = hasAttachment ? `temp-${Date.now()}` : null;
+    const optimisticMessage = hasAttachment
+      ? {
+          _id: tempId,
+          senderId: authUser?._id,
+          receiverId: selectedUser?._id,
+          text: trimmedText,
+          image: imagePreview || "",
+          fileUrl: "",
+          fileType,
+          fileName,
+          _localFileData: fileData || imagePreview,
+          createdAt: new Date().toISOString(),
+          status: "sent",
+          isUploading: true,
+          uploadProgress: 0,
+        }
+      : null;
 
     try {
+      setIsSending(true);
+      if (fileData || imagePreview) setIsUploading(true);
       await sendMessage({
-        text: text.trim(),
-        image: imagePreview,
+        text: trimmedText,
+        file: fileData || imagePreview,
+        fileName,
+        fileType,
+      },
+      {
+        tempId,
+        optimisticMessage,
+        onProgress: () => {},
       });
 
       // Clear form
       setText("");
+      setFileData(null);
+      setFileName("");
+      setFileType("");
       setImagePreview(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       emitStopTyping();
     } catch (error) {
       console.error("Failed to send message:", error);
+    } finally {
+      setIsUploading(false);
+      setIsSending(false);
     }
   };
 
   return (
     <div className="w-full p-3 sm:p-4 border-t border-base-300 bg-base-100/80 backdrop-blur">
-      {imagePreview && (
+      {(imagePreview || fileData) && (
         <div className="mb-3 flex items-center gap-2">
           <div className="relative">
-            <img
-              src={imagePreview}
-              alt="Preview"
-              className="w-20 h-20 object-cover rounded-lg border border-zinc-700"
-            />
+            {imagePreview ? (
+              <img
+                src={imagePreview}
+                alt="Preview"
+                className="w-20 h-20 object-cover rounded-lg border border-zinc-700"
+              />
+            ) : (
+              <div className="flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2">
+                {fileType.startsWith("audio/") ? (
+                  <FileAudio className="size-4" />
+                ) : fileType.startsWith("video/") ? (
+                  <FileVideo className="size-4" />
+                ) : (
+                  <FileText className="size-4" />
+                )}
+                <span className="text-xs text-base-content/80 max-w-[160px] truncate">
+                  {fileName || "Attachment"}
+                </span>
+              </div>
+            )}
             <button
-              onClick={removeImage}
+              onClick={removeFile}
               className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-base-300
               flex items-center justify-center"
               type="button"
@@ -125,27 +197,27 @@ const MessageInput = () => {
           />
           <input
             type="file"
-            accept="image/*"
+            accept="image/*,application/pdf,audio/*,video/*"
             className="hidden"
             ref={fileInputRef}
-            onChange={handleImageChange}
+            onChange={handleFileChange}
           />
 
           <button
             type="button"
             className={`hidden sm:flex btn btn-circle p-0 items-center justify-center transition-transform hover:scale-105
-                     ${imagePreview ? "text-emerald-500" : "text-base-content/60"}`}
+                     ${fileData || imagePreview ? "text-emerald-500" : "text-base-content/60"}`}
             onClick={() => fileInputRef.current?.click()}
           >
-            <Image size={16} />
+            <Paperclip size={16} />
           </button>
         </div>
         <button
           type="submit"
           className="btn btn-sm btn-circle p-0 items-center justify-center transition-transform hover:scale-105"
-          disabled={!text.trim() && !imagePreview}
+          disabled={(!text.trim() && !fileData && !imagePreview) || isUploading || isSending}
         >
-          <Send size={16} />
+          {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
         </button>
       </form>
     </div>

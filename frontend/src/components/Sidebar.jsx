@@ -3,7 +3,7 @@ import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
 import SidebarSkeleton from "./skeletons/SidebarSkeleton";
 import { Users } from "lucide-react";
-import { formatLastSeen } from "../lib/utils";
+import { formatLastSeen, formatMessageTime } from "../lib/utils";
 
 const Sidebar = () => {
   const { getUsers, users, selectedUser, setSelectedUser, isUsersLoading } = useChatStore();
@@ -22,7 +22,7 @@ const Sidebar = () => {
   if (isUsersLoading) return <SidebarSkeleton />;
 
   return (
-    <aside className="h-full w-20 lg:w-72 border-r border-base-300 flex flex-col transition-all duration-200 text-base-content">
+    <aside className="h-full w-full sm:w-80 lg:w-72 border-r border-base-300 flex flex-col transition-all duration-200 text-base-content">
       <div className="border-b border-base-300 w-full p-5">
         <div className="flex items-center gap-2">
           <Users className="size-6" />
@@ -43,22 +43,32 @@ const Sidebar = () => {
         </div>
       </div>
 
-      <div className="overflow-y-auto w-full py-3">
+      <div className="overflow-y-auto w-full py-2">
         {filteredUsers.map((user) => {
           const lastSeen = userPresence[user._id]?.lastSeen || user.lastSeen || user.createdAt;
           const formattedLastSeen = formatLastSeen(lastSeen);
+          const lastMessageText = user.lastMessage?.text?.trim();
+          const lastMessagePreview = lastMessageText
+            ? lastMessageText
+            : user.lastMessage?.image
+              ? "Photo"
+              : null;
+          const lastMessageTime = user.lastMessage?.createdAt
+            ? formatMessageTime(user.lastMessage.createdAt)
+            : null;
+          const unreadCount = Number(user.unreadCount || 0);
 
           return (
           <button
             key={user._id}
             onClick={() => setSelectedUser(user)}
             className={`
-              w-full p-3 flex items-center gap-3 text-base-content
+              w-full px-4 py-3 flex items-center gap-3 text-base-content
               hover:bg-base-300 transition-colors
               ${selectedUser?._id === user._id ? "bg-base-300 ring-1 ring-base-300" : ""}
             `}
           >
-            <div className="relative mx-auto lg:mx-0">
+            <div className="relative">
               <img
                 src={user.profilePic || "/avatar.png"}
                 alt={user.name}
@@ -72,15 +82,30 @@ const Sidebar = () => {
               )}
             </div>
 
-            {/* User info - only visible on larger screens */}
-            <div className="hidden lg:block text-left min-w-0">
-              <div className="font-medium truncate text-base-content">{user.fullName}</div>
-              <div className="text-sm text-base-content/70">
-                {onlineUsers.includes(user._id)
-                  ? "Online"
-                  : formattedLastSeen
-                    ? `last seen ${formattedLastSeen}`
-                    : "last seen unavailable"}
+            <div className="text-left min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-medium truncate text-base-content">{user.fullName}</div>
+                {lastMessageTime && (
+                  <span className="text-xs text-base-content/60 whitespace-nowrap">
+                    {lastMessageTime}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm text-base-content/70 truncate min-w-0 flex-1">
+                  {lastMessagePreview
+                    ? lastMessagePreview
+                    : onlineUsers.includes(user._id)
+                      ? "Online"
+                      : formattedLastSeen
+                        ? `last seen ${formattedLastSeen}`
+                        : "last seen unavailable"}
+                </span>
+                {unreadCount > 0 && (
+                  <span className="ml-2 size-5 text-[0.6rem] rounded-full bg-green-500 text-black grid place-items-center flex-shrink-0">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
               </div>
             </div>
           </button>

@@ -7,9 +7,11 @@ export const useChatStore = create((set, get) => ({
   messages: [],
   users: [],
   selectedUser: null,
+  initialUnreadMessageId: null,
   isSelectedUserTyping: false,
   isUsersLoading: false,
   isMessagesLoading: false,
+  isActiveChatAtBottom: true,
 
   getUsers: async () => {
     set({ isUsersLoading: true });
@@ -27,20 +29,77 @@ export const useChatStore = create((set, get) => ({
     set({ isMessagesLoading: true });
     try {
       const res = await axiosInstance.get(`/messages/${userId}`);
-      set({ messages: res.data });
+      if (Array.isArray(res.data)) {
+        set({ messages: res.data, initialUnreadMessageId: null });
+      } else {
+        set({
+          messages: res.data?.messages ?? [],
+          initialUnreadMessageId: res.data?.firstUnreadMessageId ?? null,
+        });
+      }
     } catch (error) {
       toast.error(error.response.data.message);
     } finally {
       set({ isMessagesLoading: false });
     }
   },
-  sendMessage: async (messageData) => {
-    const { selectedUser, messages } = get();
+  sendMessage: async (messageData, options = {}) => {
+    const { selectedUser } = get();
+    const tempId = options.tempId || null;
+
+    if (options.optimisticMessage) {
+      if (tempId) {
+        set((state) => ({
+          messages: state.messages.map((message) =>
+            message._id === tempId ? options.optimisticMessage : message
+          ),
+        }));
+      } else {
+        set((state) => ({ messages: [...state.messages, options.optimisticMessage] }));
+      }
+    }
+
     try {
-      const res = await axiosInstance.post(`/messages/send/${selectedUser._id}`, messageData);
-      set({ messages: [...messages, res.data] });
+      const res = await axiosInstance.post(`/messages/send/${selectedUser._id}`, messageData, {
+        onUploadProgress: options.onProgress
+          ? (event) => {
+              const total = event.total || 0;
+              const progress = total ? Math.round((event.loaded * 100) / total) : 0;
+              options.onProgress(progress);
+
+              if (tempId) {
+                set((state) => ({
+                  messages: state.messages.map((message) =>
+                    message._id === tempId
+                      ? { ...message, isUploading: true, uploadProgress: progress }
+                      : message
+                  ),
+                }));
+              }
+            }
+          : undefined,
+      });
+
+      if (tempId) {
+        set((state) => ({
+          messages: state.messages.map((message) =>
+            message._id === tempId ? res.data : message
+          ),
+        }));
+      } else {
+        set((state) => ({ messages: [...state.messages, res.data] }));
+      }
     } catch (error) {
-      toast.error(error.response.data.message);
+      if (tempId) {
+        set((state) => ({
+          messages: state.messages.map((message) =>
+            message._id === tempId
+              ? { ...message, isUploading: false, uploadFailed: true }
+              : message
+          ),
+        }));
+      }
+      toast.error(error.response?.data?.message || "Failed to send message");
     }
   },
 
@@ -48,6 +107,12 @@ export const useChatStore = create((set, get) => ({
     const socket = useAuthStore.getState().socket;
     const authUser = useAuthStore.getState().authUser;
     if (!socket || !authUser || !senderId) return;
+
+    set((state) => ({
+      users: state.users.map((user) =>
+        user._id === senderId ? { ...user, unreadCount: 0 } : user
+      ),
+    }));
 
     socket.emit("markMessagesRead", {
       from: senderId,
@@ -66,12 +131,22 @@ export const useChatStore = create((set, get) => ({
       const isMessageSentFromSelectedUser = newMessage.senderId === selectedUser._id;
       if (!isMessageSentFromSelectedUser) return;
 
-      set({
-        messages: [...get().messages, newMessage],
-        isSelectedUserTyping: false,
-      });
+      const isAtBottom = get().isActiveChatAtBottom;
 
-      get().markConversationAsRead(selectedUser._id);
+      set((state) => ({
+        messages: [...state.messages, newMessage],
+        isSelectedUserTyping: false,
+        users: state.users.map((user) => {
+          if (user._id !== newMessage.senderId) return user;
+
+          const nextUnreadCount = isAtBottom ? 0 : (user.unreadCount || 0) + 1;
+          return {
+            ...user,
+            lastMessage: newMessage,
+            unreadCount: nextUnreadCount,
+          };
+        }),
+      }));
     });
 
     socket.on("typing", ({ from }) => {
@@ -117,4 +192,6 @@ export const useChatStore = create((set, get) => ({
   },
 
   setSelectedUser: (selectedUser) => set({ selectedUser }),
+  setInitialUnreadMessageId: (initialUnreadMessageId) => set({ initialUnreadMessageId }),
+  setActiveChatAtBottom: (isActiveChatAtBottom) => set({ isActiveChatAtBottom }),
 }));
