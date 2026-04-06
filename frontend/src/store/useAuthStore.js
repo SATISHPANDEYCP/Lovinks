@@ -7,6 +7,7 @@ import { ensureLocalUserKeyPair } from "../lib/e2ee";
 const SOCKET_BASE_URL =
   import.meta.env.VITE_SOCKET_URL ||
   (import.meta.env.MODE === "development" ? "http://localhost:5001" : "/");
+const AUTH_TOKEN_KEY = "lovinks_auth_token";
 
 export const useAuthStore = create((set, get) => ({
   authUser: null,
@@ -66,6 +67,7 @@ export const useAuthStore = create((set, get) => ({
       get().connectSocket();
     } catch (error) {
       console.log("Error in checkAuth:", error);
+      window.localStorage.removeItem(AUTH_TOKEN_KEY);
       set({ authUser: null });
     } finally {
       set({ isCheckingAuth: false });
@@ -154,8 +156,15 @@ export const useAuthStore = create((set, get) => ({
         otpSessionToken: pendingLoginOtpSessionToken,
       });
 
+      if (res.data?.token) {
+        window.localStorage.setItem(AUTH_TOKEN_KEY, res.data.token);
+      }
+
+      const userPayload = { ...res.data };
+      delete userPayload.token;
+
       set({
-        authUser: res.data,
+        authUser: userPayload,
         pendingLoginOtpEmail: "",
         pendingLoginOtpSessionToken: "",
       });
@@ -278,6 +287,7 @@ export const useAuthStore = create((set, get) => ({
   logout: async () => {
     try {
       await axiosInstance.post("/auth/logout");
+      window.localStorage.removeItem(AUTH_TOKEN_KEY);
       set({
         authUser: null,
         pendingLoginOtpEmail: "",
@@ -298,6 +308,7 @@ export const useAuthStore = create((set, get) => ({
       await axiosInstance.delete("/auth/delete-account", {
         data: { password },
       });
+      window.localStorage.removeItem(AUTH_TOKEN_KEY);
       set({
         authUser: null,
         onlineUsers: [],

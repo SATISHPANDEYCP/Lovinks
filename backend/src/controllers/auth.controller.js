@@ -262,7 +262,7 @@ export const verifyLoginOtp = async (req, res) => {
     user.isEmailVerified = true;
     await user.save();
 
-    generateToken(user._id, res);
+    const token = generateToken(user._id, res);
 
     res.status(200).json({
       _id: user._id,
@@ -270,6 +270,7 @@ export const verifyLoginOtp = async (req, res) => {
       email: user.email,
       profilePic: user.profilePic,
       encryptionPublicKey: user.encryptionPublicKey,
+      token,
     });
   } catch (error) {
     console.log("Error in verifyLoginOtp controller", error.message);
