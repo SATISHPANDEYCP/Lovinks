@@ -13,6 +13,19 @@ const OTP_MAX_ATTEMPTS = 5;
 
 const hashValue = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
 
+const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+const normalizePassword = (password) => String(password || "").trim();
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const findUserByEmailInsensitive = (email) => {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return null;
+
+  return User.findOne({
+    email: { $regex: new RegExp(`^${escapeRegex(normalizedEmail)}$`, "i") },
+  });
+};
+
 const generateOtpCode = () => String(crypto.randomInt(100000, 999999));
 
 const clearLoginOtpState = {
@@ -61,7 +74,9 @@ const getCloudinaryPublicIdFromUrl = (url) => {
 };
 
 export const signup = async (req, res) => {
-  const { fullName, email, password } = req.body;
+  const fullName = String(req.body.fullName || "").trim();
+  const email = normalizeEmail(req.body.email);
+  const password = normalizePassword(req.body.password);
   try {
     if (!fullName || !email || !password) {
       return res.status(400).json({ message: "All fields are required" });
@@ -71,7 +86,7 @@ export const signup = async (req, res) => {
       return res.status(400).json({ message: "Password must be at least 6 characters" });
     }
 
-    const user = await User.findOne({ email });
+    const user = await findUserByEmailInsensitive(email);
 
     if (user?.isEmailVerified) return res.status(400).json({ message: "Email already exists" });
 
@@ -122,9 +137,14 @@ export const signup = async (req, res) => {
 };
 
 export const login = async (req, res) => {
-  const { email, password } = req.body;
+  const email = normalizeEmail(req.body.email);
+  const password = normalizePassword(req.body.password);
   try {
-    const user = await User.findOne({ email });
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password are required" });
+    }
+
+    const user = await findUserByEmailInsensitive(email);
 
     if (!user) {
       return res.status(400).json({ message: "Invalid credentials" });
@@ -190,14 +210,16 @@ export const login = async (req, res) => {
 };
 
 export const verifyLoginOtp = async (req, res) => {
-  const { email, otp, otpSessionToken } = req.body;
+  const email = normalizeEmail(req.body.email);
+  const otp = String(req.body.otp || "").trim();
+  const otpSessionToken = String(req.body.otpSessionToken || "").trim();
 
   try {
     if (!email || !otp || !otpSessionToken) {
       return res.status(400).json({ message: "Email, OTP and session token are required" });
     }
 
-    const user = await User.findOne({ email });
+    const user = await findUserByEmailInsensitive(email);
     if (!user) {
       return res.status(400).json({ message: "Invalid verification request" });
     }
@@ -256,14 +278,15 @@ export const verifyLoginOtp = async (req, res) => {
 };
 
 export const resendLoginOtp = async (req, res) => {
-  const { email, otpSessionToken } = req.body;
+  const email = normalizeEmail(req.body.email);
+  const otpSessionToken = String(req.body.otpSessionToken || "").trim();
 
   try {
     if (!email || !otpSessionToken) {
       return res.status(400).json({ message: "Email and session token are required" });
     }
 
-    const user = await User.findOne({ email });
+    const user = await findUserByEmailInsensitive(email);
     if (!user) {
       return res.status(400).json({ message: "Invalid resend request" });
     }
@@ -292,14 +315,14 @@ export const resendLoginOtp = async (req, res) => {
 };
 
 export const requestPasswordResetOtp = async (req, res) => {
-  const { email } = req.body;
+  const email = normalizeEmail(req.body.email);
 
   try {
     if (!email) {
       return res.status(400).json({ message: "Email is required" });
     }
 
-    const user = await User.findOne({ email });
+    const user = await findUserByEmailInsensitive(email);
     if (!user) {
       return res.status(404).json({ message: "No account found with this email" });
     }
@@ -332,14 +355,15 @@ export const requestPasswordResetOtp = async (req, res) => {
 };
 
 export const resendPasswordResetOtp = async (req, res) => {
-  const { email, otpSessionToken } = req.body;
+  const email = normalizeEmail(req.body.email);
+  const otpSessionToken = String(req.body.otpSessionToken || "").trim();
 
   try {
     if (!email || !otpSessionToken) {
       return res.status(400).json({ message: "Email and session token are required" });
     }
 
-    const user = await User.findOne({ email });
+    const user = await findUserByEmailInsensitive(email);
     if (!user) {
       return res.status(400).json({ message: "Invalid resend request" });
     }
@@ -371,7 +395,10 @@ export const resendPasswordResetOtp = async (req, res) => {
 };
 
 export const resetPasswordWithOtp = async (req, res) => {
-  const { email, otp, otpSessionToken, newPassword } = req.body;
+  const email = normalizeEmail(req.body.email);
+  const otp = String(req.body.otp || "").trim();
+  const otpSessionToken = String(req.body.otpSessionToken || "").trim();
+  const newPassword = normalizePassword(req.body.newPassword);
 
   try {
     if (!email || !otp || !otpSessionToken || !newPassword) {
@@ -384,7 +411,7 @@ export const resetPasswordWithOtp = async (req, res) => {
       return res.status(400).json({ message: "Password must be at least 6 characters" });
     }
 
-    const user = await User.findOne({ email });
+    const user = await findUserByEmailInsensitive(email);
     if (!user) {
       return res.status(400).json({ message: "Invalid reset request" });
     }

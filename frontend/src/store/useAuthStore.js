@@ -75,7 +75,14 @@ export const useAuthStore = create((set, get) => ({
   signup: async (data) => {
     set({ isSigningUp: true });
     try {
-      const res = await axiosInstance.post("/auth/signup", data);
+      const payload = {
+        ...data,
+        fullName: String(data.fullName || "").trim(),
+        email: String(data.email || "").trim().toLowerCase(),
+        password: String(data.password || "").trim(),
+      };
+
+      const res = await axiosInstance.post("/auth/signup", payload);
 
       if (res.data?.requiresOtp) {
         set({
@@ -100,7 +107,13 @@ export const useAuthStore = create((set, get) => ({
   login: async (data) => {
     set({ isLoggingIn: true });
     try {
-      const res = await axiosInstance.post("/auth/login", data);
+      const payload = {
+        ...data,
+        email: String(data.email || "").trim().toLowerCase(),
+        password: String(data.password || "").trim(),
+      };
+
+      const res = await axiosInstance.post("/auth/login", payload);
 
       if (res.data?.requiresOtp) {
         set({

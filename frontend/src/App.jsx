@@ -36,27 +36,32 @@ const App = () => {
 
   if (isCheckingAuth && !authUser)
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center min-h-[100dvh]">
         <Loader className="size-10 animate-spin" />
       </div>
     );
 
   return (
-    <div data-theme={theme} className="min-h-screen bg-base-100 text-base-content">
+    <div data-theme={theme} className="min-h-[100dvh] bg-base-100 text-base-content flex flex-col">
       <Navbar />
 
-      <Routes>
-        <Route path="/" element={authUser ? <HomePage /> : <Navigate to="/login" />} />
-        <Route path="/signup" element={!authUser ? <SignUpPage /> : <Navigate to="/" />} />
-        <Route path="/login" element={!authUser ? <LoginPage /> : <Navigate to="/" />} />
-        <Route
-          path="/forgot-password"
-          element={!authUser ? <ForgotPasswordPage /> : <Navigate to="/" />}
-        />
-        <Route path="/privacy" element={<PrivacyPage />} />
-        <Route path="/terms" element={<TermsPage />} />
-        <Route path="/profile" element={authUser ? <ProfilePage /> : <Navigate to="/login" />} />
-      </Routes>
+      <main className="flex-1 flex flex-col">
+        <Routes>
+          <Route path="/" element={authUser ? <HomePage /> : <Navigate to="/login" />} />
+          <Route path="/signup" element={!authUser ? <SignUpPage /> : <Navigate to="/" />} />
+          <Route path="/login" element={!authUser ? <LoginPage /> : <Navigate to="/" />} />
+          <Route
+            path="/forgot-password"
+            element={!authUser ? <ForgotPasswordPage /> : <Navigate to="/" />}
+          />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route
+            path="/profile"
+            element={authUser ? <ProfilePage /> : <Navigate to="/login" />}
+          />
+        </Routes>
+      </main>
 
       {showAuthFooter && <AuthFooter />}
 

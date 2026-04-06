@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../store/useAuthStore";
 import AuthImagePattern from "../components/AuthImagePattern";
 import { Link } from "react-router-dom";
 import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react";
+import toast from "react-hot-toast";
 
 const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -11,6 +12,7 @@ const LoginPage = () => {
     password: "",
   });
   const [otp, setOtp] = useState("");
+  const otpInputRef = useRef(null);
   const {
     login,
     verifyLoginOtp,
@@ -23,10 +25,19 @@ const LoginPage = () => {
   } = useAuthStore();
 
   const isOtpStep = Boolean(pendingLoginOtpEmail);
+  const normalizedEmail = formData.email.trim().toLowerCase();
+  const normalizedPassword = formData.password.trim();
+  const isLoginDisabled =
+    isLoggingIn || !normalizedEmail || !/\S+@\S+\.\S+/.test(normalizedEmail) || !normalizedPassword;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    login(formData);
+
+    if (!normalizedEmail) return toast.error("Email is required");
+    if (!/\S+@\S+\.\S+/.test(normalizedEmail)) return toast.error("Invalid email format");
+    if (!normalizedPassword) return toast.error("Password is required");
+
+    login({ email: normalizedEmail, password: normalizedPassword });
   };
 
   const handleVerifyOtp = async (e) => {
@@ -39,8 +50,15 @@ const LoginPage = () => {
     await resendLoginOtp();
   };
 
+  useEffect(() => {
+    if (!isOtpStep) return;
+
+    setOtp("");
+    otpInputRef.current?.focus();
+  }, [isOtpStep]);
+
   return (
-    <div className="min-h-[calc(100dvh-4rem)] grid lg:grid-cols-2 lg:overflow-hidden">
+    <div className="min-h-[calc(100dvh-8rem)] pt-16 grid lg:grid-cols-2 lg:overflow-hidden">
       {/* Left Side - Form */}
       <div className="flex flex-col justify-center items-center p-4 sm:p-8">
         <div className="w-full max-w-md space-y-6">
@@ -107,7 +125,7 @@ const LoginPage = () => {
                 </div>
               </div>
 
-              <button type="submit" className="btn btn-primary w-full" disabled={isLoggingIn}>
+              <button type="submit" className="btn btn-primary w-full" disabled={isLoginDisabled}>
                 {isLoggingIn ? (
                   <>
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -135,10 +153,13 @@ const LoginPage = () => {
                   <span className="label-text font-medium">Enter OTP</span>
                 </label>
                 <input
+                  ref={otpInputRef}
                   type="text"
                   className="input input-bordered w-full tracking-[0.28em] text-center"
                   placeholder="123456"
                   maxLength={6}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
                 />

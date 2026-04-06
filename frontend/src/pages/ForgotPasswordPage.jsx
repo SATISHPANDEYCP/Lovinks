@@ -35,19 +35,33 @@ const ForgotPasswordPage = () => {
 
   const isOtpStep = Boolean(pendingPasswordResetEmail);
   const activeEmail = pendingPasswordResetEmail || email;
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedOtp = otp.trim();
+  const normalizedNewPassword = newPassword.trim();
+  const normalizedConfirmPassword = confirmPassword.trim();
+  const isValidEmail = /\S+@\S+\.\S+/.test(normalizedEmail);
+
+  const disableRequestOtp = useMemo(() => {
+    return isRequestingPasswordResetOtp || !normalizedEmail || !isValidEmail;
+  }, [isRequestingPasswordResetOtp, isValidEmail, normalizedEmail]);
 
   const disableResetSubmit = useMemo(() => {
     return (
       isResettingPasswordWithOtp ||
-      otp.trim().length !== 6 ||
-      !newPassword ||
-      !confirmPassword
+      normalizedOtp.length !== 6 ||
+      normalizedNewPassword.length < 6 ||
+      normalizedConfirmPassword.length < 6 ||
+      normalizedNewPassword !== normalizedConfirmPassword
     );
-  }, [confirmPassword, isResettingPasswordWithOtp, newPassword, otp]);
+  }, [
+    isResettingPasswordWithOtp,
+    normalizedConfirmPassword,
+    normalizedNewPassword,
+    normalizedOtp,
+  ]);
 
   const handleRequestOtp = async (e) => {
     e.preventDefault();
-    const normalizedEmail = email.trim().toLowerCase();
 
     if (!normalizedEmail) {
       toast.error("Email is required");
@@ -65,19 +79,19 @@ const ForgotPasswordPage = () => {
   const handleResetPassword = async (e) => {
     e.preventDefault();
 
-    if (newPassword.length < 6) {
+    if (normalizedNewPassword.length < 6) {
       toast.error("Password must be at least 6 characters");
       return;
     }
 
-    if (newPassword !== confirmPassword) {
+    if (normalizedNewPassword !== normalizedConfirmPassword) {
       toast.error("Passwords do not match");
       return;
     }
 
     const success = await resetPasswordWithOtp({
-      otp: otp.trim(),
-      newPassword,
+      otp: normalizedOtp,
+      newPassword: normalizedNewPassword,
     });
 
     if (success) {
@@ -140,7 +154,7 @@ const ForgotPasswordPage = () => {
                 </div>
               </div>
 
-              <button type="submit" className="btn btn-primary w-full" disabled={isRequestingPasswordResetOtp}>
+              <button type="submit" className="btn btn-primary w-full" disabled={disableRequestOtp}>
                 {isRequestingPasswordResetOtp ? (
                   <>
                     <Loader2 className="h-5 w-5 animate-spin" />

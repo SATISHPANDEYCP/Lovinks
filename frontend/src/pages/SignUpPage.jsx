@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../store/useAuthStore";
 import { Eye, EyeOff, Loader2, Lock, Mail, User } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -9,6 +9,7 @@ import toast from "react-hot-toast";
 const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [otp, setOtp] = useState("");
+  const otpInputRef = useRef(null);
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -27,13 +28,22 @@ const SignUpPage = () => {
   } = useAuthStore();
 
   const isOtpStep = Boolean(pendingLoginOtpEmail);
+  const normalizedFullName = formData.fullName.trim();
+  const normalizedEmail = formData.email.trim().toLowerCase();
+  const normalizedPassword = formData.password.trim();
+  const isSignupDisabled =
+    isSigningUp ||
+    !normalizedFullName ||
+    !normalizedEmail ||
+    !/\S+@\S+\.\S+/.test(normalizedEmail) ||
+    !normalizedPassword;
 
   const validateForm = () => {
-    if (!formData.fullName.trim()) return toast.error("Full name is required");
-    if (!formData.email.trim()) return toast.error("Email is required");
-    if (!/\S+@\S+\.\S+/.test(formData.email)) return toast.error("Invalid email format");
-    if (!formData.password) return toast.error("Password is required");
-    if (formData.password.length < 6) return toast.error("Password must be at least 6 characters");
+    if (!normalizedFullName) return toast.error("Full name is required");
+    if (!normalizedEmail) return toast.error("Email is required");
+    if (!/\S+@\S+\.\S+/.test(normalizedEmail)) return toast.error("Invalid email format");
+    if (!normalizedPassword) return toast.error("Password is required");
+    if (normalizedPassword.length < 6) return toast.error("Password must be at least 6 characters");
 
     return true;
   };
@@ -43,7 +53,13 @@ const SignUpPage = () => {
 
     const success = validateForm();
 
-    if (success === true) signup(formData);
+    if (success === true) {
+      signup({
+        fullName: normalizedFullName,
+        email: normalizedEmail,
+        password: normalizedPassword,
+      });
+    }
   };
 
   const handleVerifyOtp = async (e) => {
@@ -55,6 +71,13 @@ const SignUpPage = () => {
   const handleResendOtp = async () => {
     await resendLoginOtp();
   };
+
+  useEffect(() => {
+    if (!isOtpStep) return;
+
+    setOtp("");
+    otpInputRef.current?.focus();
+  }, [isOtpStep]);
 
   return (
     <div className="min-h-screen pt-16 grid lg:grid-cols-2">
@@ -141,7 +164,7 @@ const SignUpPage = () => {
                 </div>
               </div>
 
-              <button type="submit" className="btn btn-primary w-full" disabled={isSigningUp}>
+              <button type="submit" className="btn btn-primary w-full" disabled={isSignupDisabled}>
                 {isSigningUp ? (
                   <>
                     <Loader2 className="size-5 animate-spin" />
@@ -163,10 +186,13 @@ const SignUpPage = () => {
                   <span className="label-text font-medium">Enter OTP</span>
                 </label>
                 <input
+                  ref={otpInputRef}
                   type="text"
                   className="input input-bordered w-full tracking-[0.28em] text-center"
                   placeholder="123456"
                   maxLength={6}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
                 />
