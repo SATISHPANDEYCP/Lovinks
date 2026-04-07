@@ -339,10 +339,11 @@
 
 	.message-image {
 		display: block;
-		width: min(100%, 21rem);
+		width: auto;
+		height: auto;
 		max-width: 100%;
-		max-height: 24rem;
-		object-fit: cover;
+		max-height: 20rem;
+		object-fit: contain;
 		border-radius: 0.78rem;
 		border: 1px solid rgb(var(--color-base-content) / 0.12);
 	}
@@ -748,8 +749,9 @@
 		}
 
 		.message-image {
-			width: min(74vw, 17.2rem);
+			width: auto;
 			max-width: 100%;
+			max-height: min(50vh, 14.5rem);
 			height: auto;
 		}
 
