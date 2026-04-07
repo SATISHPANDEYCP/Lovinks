@@ -290,45 +290,81 @@ export const decryptStringPayload = async ({
   const senderKeyMap = encryptedKeysForSenderDevices || {};
   const receiverKeyMap = encryptedKeysForReceiverDevices || {};
 
-  const wrappedKeyFromMap =
-    String(senderId) === String(viewerId)
-      ? senderKeyMap?.[currentDeviceId]
-      : receiverKeyMap?.[currentDeviceId];
+  const relevantKeyMap =
+    String(senderId) === String(viewerId) ? senderKeyMap : receiverKeyMap;
 
-  const wrappedKeyBase64 =
-    wrappedKeyFromMap ||
-    (String(senderId) === String(viewerId) ? encryptedKeyForSender : encryptedKeyForReceiver);
+  const getMapValueByKey = (valueMap, key) => {
+    if (!valueMap) return "";
+    if (typeof valueMap.get === "function") {
+      return valueMap.get(key) || "";
+    }
+    return valueMap?.[key] || "";
+  };
 
-  if (!wrappedKeyBase64 || !encryptionIv) {
+  const getAllMapValues = (valueMap) => {
+    if (!valueMap) return [];
+    if (typeof valueMap.values === "function") {
+      return Array.from(valueMap.values());
+    }
+    return Object.values(valueMap);
+  };
+
+  const wrappedKeyCandidates = [];
+  const wrappedKeyFromCurrentDevice = getMapValueByKey(relevantKeyMap, currentDeviceId);
+  if (wrappedKeyFromCurrentDevice) {
+    wrappedKeyCandidates.push(wrappedKeyFromCurrentDevice);
+  }
+
+  getAllMapValues(relevantKeyMap).forEach((wrappedKey) => {
+    if (wrappedKey && !wrappedKeyCandidates.includes(wrappedKey)) {
+      wrappedKeyCandidates.push(wrappedKey);
+    }
+  });
+
+  const roleFallbackWrappedKey =
+    String(senderId) === String(viewerId) ? encryptedKeyForSender : encryptedKeyForReceiver;
+  if (roleFallbackWrappedKey && !wrappedKeyCandidates.includes(roleFallbackWrappedKey)) {
+    wrappedKeyCandidates.push(roleFallbackWrappedKey);
+  }
+
+  if (!wrappedKeyCandidates.length || !encryptionIv) {
     return "[Encrypted message]";
   }
 
   try {
     const privateKey = await importPrivateKey(privateKeyJwk);
-    const decryptedRawAesKey = await crypto.subtle.decrypt(
-      RSA_ALGORITHM,
-      privateKey,
-      fromBase64(wrappedKeyBase64)
-    );
+    for (const wrappedKeyBase64 of wrappedKeyCandidates) {
+      try {
+        const decryptedRawAesKey = await crypto.subtle.decrypt(
+          RSA_ALGORITHM,
+          privateKey,
+          fromBase64(wrappedKeyBase64)
+        );
 
-    const aesKey = await crypto.subtle.importKey(
-      "raw",
-      decryptedRawAesKey,
-      { name: AES_ALGORITHM_NAME },
-      false,
-      ["decrypt"]
-    );
+        const aesKey = await crypto.subtle.importKey(
+          "raw",
+          decryptedRawAesKey,
+          { name: AES_ALGORITHM_NAME },
+          false,
+          ["decrypt"]
+        );
 
-    const decryptedBuffer = await crypto.subtle.decrypt(
-      {
-        name: AES_ALGORITHM_NAME,
-        iv: new Uint8Array(fromBase64(encryptionIv)),
-      },
-      aesKey,
-      fromBase64(encryptedData)
-    );
+        const decryptedBuffer = await crypto.subtle.decrypt(
+          {
+            name: AES_ALGORITHM_NAME,
+            iv: new Uint8Array(fromBase64(encryptionIv)),
+          },
+          aesKey,
+          fromBase64(encryptedData)
+        );
 
-    return decoder.decode(decryptedBuffer);
+        return decoder.decode(decryptedBuffer);
+      } catch {
+        // Try next wrapped key candidate.
+      }
+    }
+
+    return fallbackText;
   } catch {
     return fallbackText;
   }
